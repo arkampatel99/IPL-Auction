@@ -1422,3 +1422,6 @@ main.page { overflow-x: hidden; overflow-x: clip; }
   .results .table .logo { display: none; }
   .results .table td .muted.small { display: none; }
 }
+
+/* Finish auction (single player, once your squad has the minimum) */
+.finish-btn { margin-top: 8px; }

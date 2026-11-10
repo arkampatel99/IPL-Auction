@@ -5,7 +5,7 @@ import { BID_STEP, RULES, bidAtOrBelow, nextBid } from '../game/rules';
 import { playerById, roleLabel, starLabel, type Player, type Role } from '../game/players';
 import {
   bidBlock, currentPlayer, setOf, shownTeam, nextAmount, overseasCount, placeBid, reserveNeeded, rtmAnswer, rtmRaise,
-  playingTeams, setPaused, setSpeed, skipLot, type GameState,
+  playingTeams, setPaused, setSpeed, skipLot, finishWithBots, type GameState,
 } from '../game/engine';
 import { TARGET } from '../game/bots';
 import { squadReport } from '../game/squad';
@@ -99,6 +99,11 @@ export default function Auction({ state, act, guest }: { state: GameState; act: 
               {isAdmin && <button type="button" role="menuitem" onClick={() => { act((s, now) => setPaused(s, true, now)); nav('/songs'); }}>Team songs</button>}
               {isAdmin && <button type="button" role="menuitem" onClick={() => { act((s, now) => setPaused(s, true, now)); nav('/photos'); }}>Player photos</button>}
               {(state.settings.names || (state.settings.humans?.length ?? 0) > 1 || hostRoom() || guest) && <RoomMenu state={state} guest={guest} />}
+              {!multi && !guest && (
+                <button type="button" role="menuitem" onClick={() => finish(state, act)}>
+                  Finish auction <span className="small muted">· bots fill the rest</span>
+                </button>
+              )}
               <hr />
               <button type="button" role="menuitem" onClick={() => { act((s, now) => setPaused(s, true, now)); nav('/'); }}>
                 Exit to home <span className="small muted">· your game is saved</span>
@@ -722,9 +727,23 @@ function BidPanel({ state, act, outbidBy, call, rating, multi }: {
           </button>
         )}
       </div>
+      {!multi && state.teams[me].squad.length >= RULES.squadMin && (
+        <button type="button" className="btn block finish-btn" onClick={() => finish(state, act)}>
+          Squad complete. Finish auction, bots fill the rest
+        </button>
+      )}
       <p className="hint shortcut-hint">Keys: <kbd>B</kbd> or <kbd>Space</kbd> bid · <kbd>S</kbd> skip · <kbd>P</kbd> pause · <kbd>L</kbd> lists</p>
     </div>
   );
+}
+
+/** You stop buying; bots play out the remaining players at once and the results open. */
+function finish(state: GameState, act: Act) {
+  const n = state.teams[state.settings.team].squad.length;
+  const ask = n < RULES.squadMin
+    ? `You have ${n} players, fewer than the ${RULES.squadMin} needed. Finish anyway? Bots buy the remaining players and the results open.`
+    : 'Finish the auction? You stop buying, bots buy the remaining players and the results open.';
+  if (window.confirm(ask)) act((s, now) => finishWithBots(s, now));
 }
 
 /** Phones: one slim line naming the next player. */

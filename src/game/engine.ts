@@ -471,6 +471,37 @@ export function skipLot(s: GameState, now: number) {
   }
 }
 
+/**
+ * "Finish auction": you are done buying. Bots play out every remaining player at once (the same
+ * way Skip does for one player), you pass on every RTM, and the auction ends with the results.
+ */
+export function finishWithBots(s: GameState, now: number) {
+  if (s.phase !== 'auction') return;
+  if (s.paused) setPaused(s, false, now);
+  const human = (id: TeamId) => s.teams[id].human;
+  for (let guard = 0; s.phase === 'auction' && guard < 20000; guard++) {
+    if (s.hold) { s.hold = null; openNext(s, now); continue; }
+    const o = s.rtm;
+    if (o) {
+      const decider = o.stage === 'raise' ? o.buyer : o.holder;
+      if (o.stage === 'raise') rtmRaise(s, human(decider) ? null : botRtmRaise(s, o), now);
+      else rtmAnswer(s, human(decider) ? false : botWantsRtm(s, o), now);
+      continue;
+    }
+    const lot = s.lot;
+    if (!lot) break;
+    for (let i = 0; i < 400; i++) {
+      const team = pickBidder(s, random(s), true);
+      if (!team || placeBid(s, team, lot.endsAt - 1)) break;
+    }
+    closeLot(s, now);
+  }
+  s.hold = null;
+  s.intro = null;
+  s.lastEvent = null;
+  if (s.phase === 'auction') { s.lot = null; s.rtm = null; s.phase = 'done'; log(s, 'Auction complete'); }
+}
+
 /** Switch between normal and 2x speed; the player on the block keeps the same share of his clock. */
 export function setSpeed(s: GameState, speed: 1 | 2, now: number) {
   if ((s.speed ?? 1) === speed) return;
