@@ -7,6 +7,8 @@ import { useTeamTheme } from '../ui/theme';
 import { guestRoom, joinRoom, type GuestRoom } from '../net/room';
 import Auction from './Auction';
 import Results from './Results';
+import Retention from './Retention';
+import Release from './Release';
 import { SeatGrid } from './Friends';
 import type { Act } from './Game';
 
@@ -64,7 +66,10 @@ export default function GuestGame() {
   // 2. Live auction from the host.
   if (view) {
     if (view.phase === 'done') return <Results state={view} />;
-    if (view.phase === 'retention') return <Waiting text="The host is getting their squad ready…" />;
+    if (view.phase === 'retention') {
+      const Step = view.settings.mode === 'mini' ? Release : Retention;
+      return <Step state={view} guest confirm={ids => room.send({ t: 'squad', ids })} />;
+    }
     return <Auction state={view} act={act} guest />;
   }
 
@@ -93,15 +98,6 @@ export default function GuestGame() {
           </div>
         )}
       </main>
-    </>
-  );
-}
-
-function Waiting({ text }: { text: string }) {
-  return (
-    <>
-      <TopBar />
-      <main className="page stack"><div className="hero"><h1>Almost ready</h1><p className="muted">{text}</p></div></main>
     </>
   );
 }

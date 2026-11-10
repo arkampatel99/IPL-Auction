@@ -66,6 +66,7 @@ export interface Lobby {
 export type GuestMsg =
   | { t: 'hello'; name: string }
   | { t: 'ping' }
+  | { t: 'squad'; ids: string[] }
   | { t: 'pick'; team: TeamId }
   | { t: 'bid' }
   | { t: 'rtm'; yes: boolean }

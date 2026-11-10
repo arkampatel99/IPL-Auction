@@ -50,6 +50,7 @@ export interface GameState {
   currentSet?: string;
   sets?: Record<string, SetInfo>; // set of every player in this auction's pool
   released?: string[];             // mini: players you released, auctioned first
+  ready?: TeamId[];                // teams whose person has confirmed retentions or releases
   intro?: SetIntro | null;
 }
 export interface SetIntro { set: string; name: string; players: string[] }
@@ -119,8 +120,10 @@ export function createGame(settings: Settings): GameState {
     v: 2, settings, phase: 'retention', teams, queue: [], qi: 0, round: 1, lot: null, rtm: null,
     paused: null, results: {}, log: [], rand: settings.seed >>> 0, lastEvent: null,
   };
+  // Bots pick their own retentions now; every person (host and friends) picks on their own screen.
+  s.ready = [];
   if (settings.mode === 'mega') {
-    for (const id of TEAM_IDS) if (id !== settings.team) applyRetention(s, id, botRetain(s, id));
+    for (const id of TEAM_IDS) if (!humans.has(id)) applyRetention(s, id, botRetain(s, id));
   } else {
     setupMini(s);
   }
@@ -190,8 +193,42 @@ export function releasePlayers(s: GameState, team: TeamId, ids: string[]) {
     t.squad.splice(i, 1);
     delete s.results[id];
   }
-  s.released = ids;
+  s.released = [...(s.released ?? []), ...ids];
   if (ids.length) log(s, `${team} released ${ids.length} ${ids.length === 1 ? 'player' : 'players'}`);
+}
+
+/**
+ * A person confirms their squad before the auction: retained players (mega) or released players (mini).
+ * Checked here because friends send their choice over the network.
+ */
+export function confirmSquad(s: GameState, team: TeamId, ids: string[]): boolean {
+  if (s.phase !== 'retention' || (s.ready ??= []).includes(team)) return false;
+  const unique = [...new Set(ids)];
+  if (s.settings.mode === 'mega') {
+    const allowed = new Set(retainable(team).map(p => p.id));
+    if (!unique.every(id => allowed.has(id) && !s.results[id]) || retentionError(unique)) return false;
+    applyRetention(s, team, unique);
+  } else {
+    releasePlayers(s, team, unique.filter(id => s.teams[team].squad.some(e => e.id === id)));
+  }
+  s.ready.push(team);
+  return true;
+}
+
+/** People who still have to confirm their squad. */
+export const squadsPending = (s: GameState) =>
+  s.phase === 'retention' ? TEAM_IDS.filter(id => s.teams[id].human && !(s.ready ?? []).includes(id)) : [];
+
+/** Teams whose person left (or the host won't wait for): a bot decides for them. */
+export function botConfirmSquad(s: GameState, team: TeamId) {
+  if (s.phase !== 'retention' || (s.ready ??= []).includes(team)) return;
+  if (s.settings.mode === 'mega') applyRetention(s, team, botRetain(s, team));
+  s.ready.push(team);
+}
+
+/** Start the auction once every person has confirmed their squad. */
+export function startWhenReady(s: GameState, now: number) {
+  if (s.phase === 'retention' && squadsPending(s).length === 0) startAuction(s, now);
 }
 
 export function startAuction(s: GameState, now: number) {

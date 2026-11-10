@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { RULES } from '../game/rules';
 import { playerById, roleLabel, type Role } from '../game/players';
-import { overseasCount, releasePlayers, startAuction, type GameState } from '../game/engine';
+import { overseasCount, squadsPending } from '../game/engine';
 import { PlayerPhoto, TeamTag, TopBar, money } from '../ui/common';
-import type { Act } from './Game';
+import { SquadWaiting, type SquadStepProps } from './Retention';
 
 const GROUPS: [Role, string][] = [['BAT', 'Batters'], ['WK', 'Wicket-keepers'], ['AR', 'All-rounders'], ['BOWL', 'Bowlers']];
 
 /** Mini auction, step 1: release players you don't want. Their salary goes back into your purse. */
-export default function Release({ state, act }: { state: GameState; act: Act }) {
+export default function Release({ state, confirm, startAnyway, guest }: SquadStepProps) {
   const me = state.settings.team;
   const t = state.teams[me];
   const [out, setOut] = useState<string[]>([]);
@@ -16,11 +16,13 @@ export default function Release({ state, act }: { state: GameState; act: Act }) 
   const left = t.squad.length - out.length;
   const osLeft = overseasCount(t) - out.filter(id => playerById[id].overseas).length;
   const toggle = (id: string) => setOut(o => (o.includes(id) ? o.filter(x => x !== id) : [...o, id]));
-  const start = () => act((s, now) => { releasePlayers(s, me, out); startAuction(s, now); });
+  const start = () => confirm(out);
+  const others = squadsPending(state).filter(id => id !== me);
+  if (state.ready?.includes(me)) return <SquadWaiting state={state} startAnyway={startAnyway} />;
 
   return (
     <>
-      <TopBar back="/bots"><TeamTag id={me} you /></TopBar>
+      <TopBar back={guest ? undefined : state.settings.names ? '/' : '/bots'}><TeamTag id={me} you /></TopBar>
       <main className="page stack" style={{ paddingBottom: 120 }}>
         <div className="hero">
           <h1>Release players</h1>
@@ -66,7 +68,9 @@ export default function Release({ state, act }: { state: GameState; act: Act }) 
       <div className="bottom-cta">
         <div style={{ maxWidth: 608, margin: '0 auto' }}>
           <button type="button" className="btn primary big block" onClick={start}>
-            {out.length ? `Release ${out.length} and start auction` : 'Keep everyone and start auction'}
+            {others.length
+              ? (out.length ? `Release ${out.length} and confirm` : 'Keep everyone and confirm')
+              : (out.length ? `Release ${out.length} and start auction` : 'Keep everyone and start auction')}
           </button>
         </div>
       </div>

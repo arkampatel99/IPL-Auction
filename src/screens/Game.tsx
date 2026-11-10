@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useGame } from './useGame';
 import { useTeamTheme } from '../ui/theme';
-import { placeBid, rtmAnswer, rtmRaise } from '../game/engine';
+import { botConfirmSquad, confirmSquad, placeBid, rtmAnswer, rtmRaise, squadsPending, startWhenReady } from '../game/engine';
 import { hostRoom } from '../net/room';
 import Retention from './Retention';
 import Release from './Release';
@@ -15,7 +15,11 @@ export default function Game() {
   useHostRoom(state, act);
   if (!state) return <Navigate to="/" replace />;
   if (state.phase === 'retention') {
-    return state.settings.mode === 'mini' ? <Release state={state} act={act} /> : <Retention state={state} act={act} />;
+    const me = state.settings.team;
+    const confirm = (ids: string[]) => act((s, now) => { if (confirmSquad(s, me, ids)) startWhenReady(s, now); });
+    const startAnyway = () => act((s, now) => { for (const id of squadsPending(s)) botConfirmSquad(s, id); startWhenReady(s, now); });
+    const Step = state.settings.mode === 'mini' ? Release : Retention;
+    return <Step state={state} confirm={confirm} startAnyway={startAnyway} />;
   }
   if (state.phase === 'done') return <Results state={state} />;
   return <Auction state={state} act={act} />;
@@ -43,6 +47,7 @@ function useHostRoom(state: ReturnType<typeof useGame>['state'], act: Act) {
     const room = hostRoom();
     if (!room) return;
     room.onAction = (team, msg) => act((s, now) => {
+      if (msg.t === 'squad') { if (confirmSquad(s, team, msg.ids)) startWhenReady(s, now); return; }
       if (msg.t === 'bid') placeBid(s, team, now);
       const o = s.rtm;
       if (!o) return;
@@ -54,19 +59,23 @@ function useHostRoom(state: ReturnType<typeof useGame>['state'], act: Act) {
       const s = latest.current;
       if (!s || s.phase === 'done' || s.teams[team].human) return false;
       act(st => {
+        // Joining while squads are being picked: that team's bot choice stands.
+        if (st.phase === 'retention') (st.ready ??= []).includes(team) || st.ready.push(team);
         st.teams[team].human = true;
         st.settings.humans = [...new Set([...(st.settings.humans ?? [st.settings.team]), team])];
         st.settings.names = { ...st.settings.names, [team]: name };
       });
       return true;
     };
-    room.onLeave = team => act(st => {
+    room.onLeave = team => act((st, now) => {
       if (team === st.settings.team) return;
+      botConfirmSquad(st, team);
       st.teams[team].human = false;
       st.settings.humans = (st.settings.humans ?? []).filter(t => t !== team);
       const names = { ...st.settings.names };
       delete names[team];
       st.settings.names = names;
+      startWhenReady(st, now);
     });
     return () => { room.onAction = undefined; room.onJoin = undefined; room.onLeave = undefined; };
   }, [act]);

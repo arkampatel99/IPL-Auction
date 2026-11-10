@@ -2,11 +2,51 @@ import { useState } from 'react';
 import { TEAM_IDS, teamById } from '../data/teams';
 import { RULES } from '../game/rules';
 import { playerById, roleLabel } from '../game/players';
-import { applyRetention, retainable, retentionError, retentionPlan, startAuction, type GameState } from '../game/engine';
+import { retainable, retentionError, retentionPlan, squadsPending, type GameState } from '../game/engine';
 import { PlayerPhoto, TeamLogo, TeamTag, TopBar, money } from '../ui/common';
-import type { Act } from './Game';
 
-export default function Retention({ state, act }: { state: GameState; act: Act }) {
+/** Props shared by the retention (mega) and release (mini) screens, for the host and for friends. */
+export interface SquadStepProps {
+  state: GameState;
+  /** Send my choice: retained ids (mega) or released ids (mini). */
+  confirm: (ids: string[]) => void;
+  /** Host only: stop waiting, bots decide for anyone still choosing. */
+  startAnyway?: () => void;
+  guest?: boolean;
+}
+
+/** After you confirm: who is still choosing, and (host) a way to start without them. */
+export function SquadWaiting({ state, startAnyway }: Pick<SquadStepProps, 'state' | 'startAnyway'>) {
+  const pending = squadsPending(state);
+  const me = state.settings.team;
+  return (
+    <>
+      <TopBar><TeamTag id={me} you /></TopBar>
+      <main className="page stack">
+        <div className="hero">
+          <h1>Squad ready</h1>
+          <p className="muted">The auction starts when everyone has picked their squad.</p>
+        </div>
+        <section className="card list">
+          {pending.map(id => (
+            <div key={id} className="list-row">
+              <TeamLogo id={id} size={28} />
+              <div className="grow"><b>{id}</b> <span className="muted">· {state.settings.names?.[id] ?? 'Friend'}</span></div>
+              <span className="small muted">Still choosing</span>
+            </div>
+          ))}
+        </section>
+        {startAnyway && (
+          <button type="button" className="btn primary big block" onClick={startAnyway}>
+            Start now · bots choose for {pending.length === 1 ? 'them' : `the other ${pending.length}`}
+          </button>
+        )}
+      </main>
+    </>
+  );
+}
+
+export default function Retention({ state, confirm: send, startAnyway, guest }: SquadStepProps) {
   const me = state.settings.team;
   const [picked, setPicked] = useState<string[]>([]);
   const plan = retentionPlan(picked);
@@ -19,11 +59,13 @@ export default function Retention({ state, act }: { state: GameState; act: Act }
   };
   const blocked = (id: string) => !picked.includes(id) && retentionError([...picked, id]) !== null;
 
-  const confirm = () => act((s, now) => { applyRetention(s, me, picked); startAuction(s, now); });
+  const confirm = () => send(picked);
+  const others = squadsPending(state).filter(id => id !== me);
+  if (state.ready?.includes(me)) return <SquadWaiting state={state} startAnyway={startAnyway} />;
 
   return (
     <>
-      <TopBar back="/bots"><TeamTag id={me} you /></TopBar>
+      <TopBar back={guest ? undefined : state.settings.names ? '/' : '/bots'}><TeamTag id={me} you /></TopBar>
       <main className="page stack" style={{ paddingBottom: 120 }}>
         <div className="hero">
           <h1>Retain players</h1>
@@ -70,7 +112,9 @@ export default function Retention({ state, act }: { state: GameState; act: Act }
               <div key={id} className="list-row">
                 <TeamLogo id={id} size={28} />
                 <div className="grow small">
-                  {state.teams[id].squad.map(e => playerById[e.id].name).join(', ') || <span className="muted">Nobody</span>}
+                  {state.teams[id].human && !state.ready?.includes(id)
+                    ? <span className="muted">{state.settings.names?.[id] ?? 'Friend'} is choosing…</span>
+                    : state.teams[id].squad.map(e => playerById[e.id].name).join(', ') || <span className="muted">Nobody</span>}
                 </div>
                 <span className="small muted num">{money(state.teams[id].purse)}</span>
               </div>
@@ -81,7 +125,9 @@ export default function Retention({ state, act }: { state: GameState; act: Act }
       <div className="bottom-cta">
         <div style={{ maxWidth: 608, margin: '0 auto' }}>
           <button type="button" className="btn primary big block" onClick={confirm}>
-            {picked.length ? `Keep ${picked.length} and start auction` : `Keep nobody and start auction`}
+            {others.length
+              ? (picked.length ? `Keep ${picked.length} and confirm` : 'Keep nobody and confirm')
+              : (picked.length ? `Keep ${picked.length} and start auction` : `Keep nobody and start auction`)}
           </button>
           <p className="hint" style={{ textAlign: 'center', marginTop: 6 }}>{teamById[me].name}</p>
         </div>

@@ -93,6 +93,8 @@ Play with Friends uses PeerJS (WebRTC). The host's browser runs the auction and 
 introduced by PeerJS's free public server. No accounts or server setup are needed. If the host closes the tab,
 the room ends.
 
+- Everyone in the room picks their own squad first: retentions in a mega auction, releases in a mini auction.
+  The auction starts when all have confirmed. The host can start early, and bots then choose for anyone still picking.
 - Friends can join after the auction has started: they open the invite link and take over a bot's team.
   The host finds the link in the auction **Menu** (Copy invite link). If a friend leaves, a bot takes their team back.
 - Team chips show who plays each team (name, You, or Bot), and the Menu lists everyone in the room.
