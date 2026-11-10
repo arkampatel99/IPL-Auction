@@ -92,3 +92,27 @@ Custom domain: Vercel dashboard, your project, Settings, Domains.
 Play with Friends uses PeerJS (WebRTC). The host's browser runs the auction and friends connect to it directly,
 introduced by PeerJS's free public server. No accounts or server setup are needed. If the host closes the tab,
 the room ends.
+
+- Friends can join after the auction has started: they open the invite link and take over a bot's team.
+  The host finds the link in the auction **Menu** (Copy invite link). If a friend leaves, a bot takes their team back.
+- Team chips show who plays each team (name, You, or Bot), and the Menu lists everyone in the room.
+
+### If friends get stuck on "Connecting"
+
+Home Wi-Fi usually connects directly. Phones on mobile data or office networks often need a relay (TURN server).
+Get a free one from Metered (metered.ca, free plan), then in Vercel, Project, Settings, Environment Variables add:
+
+```
+VITE_TURN_CREDENTIALS_URL = https://<your-app>.metered.live/api/v1/turn/credentials?apiKey=<your key>
+```
+
+or, for any other TURN server:
+
+```
+VITE_TURN_URL        = turn:your.server:3478,turns:your.server:443
+VITE_TURN_USERNAME   = ...
+VITE_TURN_CREDENTIAL = ...
+```
+
+Redeploy after adding them. Also ask the host to keep the auction on screen: phones pause background tabs,
+and the room reconnects when the host comes back.
