@@ -109,7 +109,7 @@ export default function Retention({ state, confirm: send, startAnyway, guest }: 
         <section className="section">
           <h3>Other teams kept</h3>
           <div className="card list">
-            {TEAM_IDS.filter(id => id !== me).map(id => (
+            {TEAM_IDS.filter(id => id !== me && !state.teams[id].out).map(id => (
               <div key={id} className="list-row">
                 <TeamLogo id={id} size={28} />
                 <div className="grow small">

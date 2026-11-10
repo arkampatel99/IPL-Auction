@@ -62,6 +62,7 @@ function useHostRoom(state: ReturnType<typeof useGame>['state'], act: Act) {
         // Joining while squads are being picked: that team's bot choice stands.
         if (st.phase === 'retention') (st.ready ??= []).includes(team) || st.ready.push(team);
         st.teams[team].human = true;
+        delete st.teams[team].out; delete st.teams[team].left;
         st.settings.humans = [...new Set([...(st.settings.humans ?? [st.settings.team]), team])];
         st.settings.names = { ...st.settings.names, [team]: name };
       });
@@ -71,6 +72,8 @@ function useHostRoom(state: ReturnType<typeof useGame>['state'], act: Act) {
       if (team === st.settings.team) return;
       botConfirmSquad(st, team);
       st.teams[team].human = false;
+      // No bots in this room: the team stops bidding (its squad so far stays).
+      if (st.settings.bots === false) { st.teams[team].out = true; st.teams[team].left = true; }
       st.settings.humans = (st.settings.humans ?? []).filter(t => t !== team);
       const names = { ...st.settings.names };
       delete names[team];

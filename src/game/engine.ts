@@ -9,7 +9,17 @@ import { botMaxBid, botRetain, botWantsRtm, botRtmRaise, pickBidder } from './bo
 
 export type Acquired = 'retained' | 'bought' | 'rtm';
 export interface SquadEntry { id: string; price: number; how: Acquired }
-export interface TeamState { id: TeamId; human: boolean; purse: number; squad: SquadEntry[]; rtm: number }
+export interface TeamState {
+  id: TeamId; human: boolean; purse: number; squad: SquadEntry[]; rtm: number;
+  /** Friends room without bots: nobody plays this team, so it sits out the auction. */
+  out?: boolean;
+  /** Someone played this team and left (no-bot room): it sits out but still counts in the results. */
+  left?: boolean;
+}
+
+/** Teams taking part (everyone, unless the host chose no bots for empty teams). */
+export const inPlay = (s: GameState, id: TeamId) => !s.teams[id].out;
+export const playingTeams = (s: GameState) => TEAM_IDS.filter(id => !s.teams[id].out);
 export interface Lot {
   playerId: string;
   bid: number | null;
@@ -29,6 +39,8 @@ export interface Settings {
   humans?: TeamId[];
   /** Friends room: the name of the person playing each team. */
   names?: Partial<Record<TeamId, string>>;
+  /** Friends room: false = teams nobody plays sit out (no bots). Default true. */
+  bots?: boolean;
 }
 export interface GameState {
   v: 2;
@@ -115,7 +127,8 @@ export const nextAmount = (s: GameState) => (s.lot ? nextBid(s.lot.bid, playerBy
 export function createGame(settings: Settings): GameState {
   const teams = {} as Record<TeamId, TeamState>;
   const humans = new Set([settings.team, ...(settings.humans ?? [])]);
-  for (const id of TEAM_IDS) teams[id] = { id, human: humans.has(id), purse: RULES.megaPurse, squad: [], rtm: 0 };
+  const noBots = settings.bots === false;
+  for (const id of TEAM_IDS) teams[id] = { id, human: humans.has(id), purse: RULES.megaPurse, squad: [], rtm: 0, ...(noBots && !humans.has(id) ? { out: true } : {}) };
   const s: GameState = {
     v: 2, settings, phase: 'retention', teams, queue: [], qi: 0, round: 1, lot: null, rtm: null,
     paused: null, results: {}, log: [], rand: settings.seed >>> 0, lastEvent: null,
@@ -123,7 +136,7 @@ export function createGame(settings: Settings): GameState {
   // Bots pick their own retentions now; every person (host and friends) picks on their own screen.
   s.ready = [];
   if (settings.mode === 'mega') {
-    for (const id of TEAM_IDS) if (!humans.has(id)) applyRetention(s, id, botRetain(s, id));
+    for (const id of TEAM_IDS) if (!humans.has(id) && !teams[id].out) applyRetention(s, id, botRetain(s, id));
   } else {
     setupMini(s);
   }
@@ -222,7 +235,7 @@ export const squadsPending = (s: GameState) =>
 /** Teams whose person left (or the host won't wait for): a bot decides for them. */
 export function botConfirmSquad(s: GameState, team: TeamId) {
   if (s.phase !== 'retention' || (s.ready ??= []).includes(team)) return;
-  if (s.settings.mode === 'mega') applyRetention(s, team, botRetain(s, team));
+  if (s.settings.mode === 'mega' && !s.teams[team].out) applyRetention(s, team, botRetain(s, team));
   s.ready.push(team);
 }
 
@@ -264,7 +277,7 @@ export function startAuction(s: GameState, now: number) {
 
 function openNext(s: GameState, now: number) {
   s.lot = null;
-  const allFull = TEAM_IDS.every(id => s.teams[id].squad.length >= RULES.squadMax);
+  const allFull = playingTeams(s).every(id => s.teams[id].squad.length >= RULES.squadMax);
   while (!allFull) {
     s.qi++;
     if (s.qi >= s.queue.length) {
@@ -355,7 +368,7 @@ function closeLot(s: GameState, now: number) {
     return;
   }
   const holder = p.lastTeam;
-  if (s.settings.mode === 'mega' && holder && holder !== lot.leader) {
+  if (s.settings.mode === 'mega' && holder && holder !== lot.leader && !s.teams[holder].out) {
     const h = s.teams[holder];
     if (h.rtm > 0 && !bidBlock(h, p, lot.bid)) {
       s.rtm = { playerId: p.id, holder, buyer: lot.leader, price: lot.bid, stage: 'match', at: now + 900 };

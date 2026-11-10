@@ -17,7 +17,7 @@ export default function Results({ state }: { state: GameState }) {
   const me = state.settings.team;
 
   // Rank by overall rating; ties go to the better value for money.
-  const ranked: Row[] = useMemo(() => TEAM_IDS
+  const ranked: Row[] = useMemo(() => TEAM_IDS.filter(id => !state.teams[id].out || state.teams[id].left)
     .map(id => ({ id, r: squadReport(state.teams[id]), left: state.teams[id].purse, size: state.teams[id].squad.length }))
     .sort((a, b) => b.r.score - a.r.score || b.r.value - a.r.value), [state]);
   const winner = ranked[0];

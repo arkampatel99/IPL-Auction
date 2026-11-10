@@ -9,6 +9,14 @@ import { createRoom, hostRoom, inviteLink, type Seat } from '../net/room';
 import { saveGame } from './useGame';
 
 const NAME_KEY = 'ipl-auction-name';
+
+/** "Empty teams" choice: no bots, or bots at a level. */
+type Empties = 'none' | BotLevel;
+const EMPTY_OPTIONS: { value: Empties; label: string }[] = [
+  { value: 'none', label: 'No bots' }, { value: 'easy', label: 'Easy bots' }, { value: 'medium', label: 'Medium' }, { value: 'hard', label: 'Hard' },
+];
+const emptiesOf = (s: { level: BotLevel; bots?: boolean }): Empties => (s.bots === false ? 'none' : s.level);
+const withEmpties = <T extends { level: BotLevel; bots?: boolean }>(s: T, e: Empties): T => ({ ...s, level: e === 'none' ? s.level : e, bots: e !== 'none' });
 const savedName = () => { try { return localStorage.getItem(NAME_KEY) ?? ''; } catch { return ''; } };
 const keepName = (n: string) => { try { localStorage.setItem(NAME_KEY, n); } catch { /* storage off */ } };
 
@@ -18,7 +26,7 @@ export default function Friends() {
   const [name, setName] = useState(savedName());
   const [team, setTeam] = useState<TeamId>('CSK');
   const [mode, setMode] = useState<AuctionMode>('mini');
-  const [level, setLevel] = useState<BotLevel>('medium');
+  const [empties, setEmpties] = useState<Empties>('medium');
   const [length, setLength] = useState<'quick' | 'full'>('quick');
   const [timer, setTimer] = useState(15);
   const [code, setCode] = useState('');
@@ -32,7 +40,7 @@ export default function Friends() {
     setBusy(true); setError('');
     try {
       hostRoom()?.close();
-      await createRoom(name.trim(), team, { mode, level, length, timer });
+      await createRoom(name.trim(), team, withEmpties({ mode, level: 'medium' as BotLevel, length, timer }, empties));
       nav('/room');
     } catch {
       setError('Could not create a room. Check your internet and try again.');
@@ -86,9 +94,9 @@ export default function Friends() {
           <Segmented label="Auction type" value={mode} onChange={setMode} options={[{ value: 'mega', label: 'Mega' }, { value: 'mini', label: 'Mini' }]} />
         </section>
         <section className="section">
-          <h3>Empty teams</h3>
-          <Segmented label="Bot level" value={level} onChange={setLevel}
-            options={[{ value: 'easy', label: 'Easy bots' }, { value: 'medium', label: 'Medium' }, { value: 'hard', label: 'Hard' }]} />
+          <h3>Teams nobody picks</h3>
+          <Segmented label="Teams nobody picks" value={empties} onChange={setEmpties} options={EMPTY_OPTIONS} />
+          <p className="hint">{empties === 'none' ? 'Only people play. Free teams sit out, and friends can still join and take one.' : 'Bots play every team nobody picks.'}</p>
         </section>
         <section className="section">
           <h3>Length</h3>
@@ -132,6 +140,8 @@ export function HostLobby() {
   const link = inviteLink(room.lobby.code);
   const seats = room.lobby.seats;
   const people = Object.keys(seats).length;
+  const noBots = room.lobby.settings.bots === false;
+  const setEmpties = (e: Empties) => { room.lobby.settings = withEmpties(room.lobby.settings, e); room.sendLobby(); };
   const copy = async () => { try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* clipboard blocked */ } };
   const start = () => {
     const humans = Object.keys(seats) as TeamId[];
@@ -158,21 +168,28 @@ export function HostLobby() {
             <a className="btn" href={`https://wa.me/?text=${encodeURIComponent(`Join my IPL auction: ${link}`)}`} target="_blank" rel="noreferrer">Share on WhatsApp</a>
           </div>
         </div>
-        <SeatGrid seats={seats} />
+        <section className="section">
+          <h3>Teams nobody picks</h3>
+          <Segmented label="Teams nobody picks" value={emptiesOf(room.lobby.settings)} onChange={setEmpties} options={EMPTY_OPTIONS} />
+        </section>
+        <SeatGrid seats={seats} bots={!noBots} />
         <button type="button" className="btn primary big block" onClick={start}>
-          Start auction · {people} {people === 1 ? 'person' : 'people'}, {10 - people} bots
+          Start auction · {people} {people === 1 ? 'person' : 'people'}{noBots ? ', no bots' : `, ${10 - people} bots`}
         </button>
+        {noBots && people < 2 && <p className="hint" style={{ textAlign: 'center' }}>Waiting for friends? You can start now: they can still join during the auction.</p>}
       </main>
     </>
   );
 }
 
 /** Ten team tiles showing who has each team. Pass onPick to let a guest choose a free one. */
-export function SeatGrid({ seats, onPick, mine, late, myName, myCid }: {
+export function SeatGrid({ seats, onPick, mine, late, myName, myCid, bots = true }: {
   seats: Partial<Record<TeamId, Seat>>; onPick?: (t: TeamId) => void; mine?: TeamId | null; late?: boolean;
   /** My name: a seat held under it (my old connection) can be taken back. */
   myName?: string;
   myCid?: string;
+  /** False when teams nobody picks sit out instead of being played by bots. */
+  bots?: boolean;
 }) {
   return (
     <div className="seat-grid">
@@ -187,7 +204,7 @@ export function SeatGrid({ seats, onPick, mine, late, myName, myCid }: {
             <TeamLogo id={t.id} size={32} />
             <span className="seat-text">
               <b>{t.id}</b>
-              <span className="small muted">{s ? (s.peer === 'host' ? `${s.name} (host)` : mineBefore && onPick ? `${s.name} · tap to rejoin` : s.away ? `${s.name} · away` : s.name) : onPick ? (late ? 'Bot · tap to play' : 'Tap to pick') : 'Bot'}</span>
+              <span className="small muted">{s ? (s.peer === 'host' ? `${s.name} (host)` : mineBefore && onPick ? `${s.name} · tap to rejoin` : s.away ? `${s.name} · away` : s.name) : onPick ? (late ? (bots ? 'Bot · tap to play' : 'Free · tap to play') : 'Tap to pick') : (bots ? 'Bot' : 'Free')}</span>
             </span>
           </button>
         );

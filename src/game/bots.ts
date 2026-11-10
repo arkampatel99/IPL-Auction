@@ -91,7 +91,7 @@ export function botMaxBid(s: GameState, team: TeamId, p: Player): number {
 /** Lots still to come, and how many players the bots still need to reach 18. */
 function squeeze(s: GameState) {
   const left = s.queue.length - s.qi - 1;
-  const short = TEAM_IDS.reduce((a, id) => a + (s.teams[id].human ? 0 : Math.max(0, RULES.squadMin - s.teams[id].squad.length)), 0);
+  const short = TEAM_IDS.reduce((a, id) => a + (s.teams[id].human || s.teams[id].out ? 0 : Math.max(0, RULES.squadMin - s.teams[id].squad.length)), 0);
   return { left, short };
 }
 
@@ -133,7 +133,7 @@ export function contenders(s: GameState, p: Player): TeamId[] {
   const k = 2 + Math.floor(hash01(`${seed}:${p.id}:k`) * 3) + (p.rating >= 85 ? 1 : 0);
   const former = shownTeam(s, p);
   return TEAM_IDS
-    .filter(id => !s.teams[id].human && interested(s, id, p))
+    .filter(id => !s.teams[id].human && !s.teams[id].out && interested(s, id, p))
     .sort((a, b) => (b === former ? 1 : 0) - (a === former ? 1 : 0) || hash01(`${seed}:${a}:${p.id}:o`) - hash01(`${seed}:${b}:${p.id}:o`))
     .slice(0, k);
 }

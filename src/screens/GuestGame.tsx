@@ -89,12 +89,12 @@ export default function GuestGame() {
           <h1>{lobby ? `${lobby.host}'s room` : room.error ? 'Not connected' : 'Connecting…'}</h1>
           <p className="muted">
             {!lobby ? (room.error ? `Room ${code.toUpperCase()}` : `Joining room ${code.toUpperCase()}${room.via === 'relay' ? ' · using the backup route' : ''}…`)
-              : late ? (myTeam ? `You're ${teamById[myTeam].name}. Joining the auction…` : 'The auction is on. Pick a bot team to take it over from here.')
+              : late ? (myTeam ? `You're ${teamById[myTeam].name}. Joining the auction…` : (lobby.settings.bots === false ? 'The auction is on. Pick a free team to join.' : 'The auction is on. Pick a bot team to take it over from here.'))
               : myTeam ? `You're ${teamById[myTeam].name}. Waiting for the host to start.` : 'Pick a free team.'}
           </p>
         </div>
         {room.error && <p className="status err" role="alert">{room.error}</p>}
-        {lobby && <SeatGrid seats={lobby.seats} mine={myTeam} late={late} myName={name.trim() || savedName()} myCid={(() => { try { return localStorage.getItem('ipl-auction-cid') ?? undefined; } catch { return undefined; } })()} onPick={late && myTeam ? undefined : t => room.send({ t: 'pick', team: t })} />}
+        {lobby && <SeatGrid seats={lobby.seats} mine={myTeam} late={late} bots={lobby.settings.bots !== false} myName={name.trim() || savedName()} myCid={(() => { try { return localStorage.getItem('ipl-auction-cid') ?? undefined; } catch { return undefined; } })()} onPick={late && myTeam ? undefined : t => room.send({ t: 'pick', team: t })} />}
         {room.error && (
           <div className="row" style={{ gap: 8 }}>
             <button type="button" className="btn primary" style={{ flex: 1 }} onClick={retry}>Try again</button>

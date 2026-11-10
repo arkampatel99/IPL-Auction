@@ -5,7 +5,7 @@ import { RULES, nextBid } from '../game/rules';
 import { playerById, roleLabel, starLabel, type Player, type Role } from '../game/players';
 import {
   bidBlock, currentPlayer, setOf, shownTeam, nextAmount, overseasCount, placeBid, reserveNeeded, rtmAnswer, rtmRaise,
-  setPaused, skipLot, type GameState,
+  playingTeams, setPaused, skipLot, type GameState,
 } from '../game/engine';
 import { TARGET } from '../game/bots';
 import { squadReport } from '../game/squad';
@@ -372,7 +372,7 @@ function Teams({ state, ratings, onOpen }: { state: GameState; ratings: Ratings;
   }, [leader, state.lot?.playerId]);
   return (
     <div className="team-strip" ref={strip}>
-      {TEAM_IDS.map(id => {
+      {playingTeams(state).map(id => {
         const t = state.teams[id];
         const r = ratings[id];
         return (
@@ -728,7 +728,9 @@ function RoomMenu({ state, guest }: { state: GameState; guest?: boolean }) {
   const [copied, setCopied] = useState(false);
   const code = guest ? guestRoom()?.code : hostRoom()?.lobby.code;
   const people = TEAM_IDS.filter(id => state.teams[id].human);
-  const bots = TEAM_IDS.length - people.length;
+  const noBots = state.settings.bots === false;
+  const bots = playingTeams(state).length - people.length;
+  const free = TEAM_IDS.length - people.length;
   const copy = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!code) return;
@@ -744,7 +746,11 @@ function RoomMenu({ state, guest }: { state: GameState; guest?: boolean }) {
             <li key={id}><TeamLogo id={id} size={20} /><b>{id}</b><span>{id === state.settings.team ? 'You' : personName(state, id)}</span></li>
           ))}
         </ul>
-        <div className="small muted">{bots} {bots === 1 ? 'team is a bot' : 'teams are bots'}. Friends can still join and take one.</div>
+        <div className="small muted">
+          {noBots
+            ? `No bots. ${free} ${free === 1 ? 'team is' : 'teams are'} free for friends to join.`
+            : `${bots} ${bots === 1 ? 'team is a bot' : 'teams are bots'}. Friends can still join and take one.`}
+        </div>
       </div>
       {code && (
         <button type="button" role="menuitem" onClick={copy}>
@@ -817,7 +823,7 @@ function SidePanel({ state, ratings, onOpen }: { state: GameState; ratings: Rati
 }
 
 function TeamsTable({ state, ratings, onOpen }: { state: GameState; ratings: Ratings; onOpen: (t: TeamId) => void }) {
-  const rows = [...TEAM_IDS].sort((a, b) => ratings[b].overall - ratings[a].overall);
+  const rows = playingTeams(state).sort((a, b) => ratings[b].overall - ratings[a].overall);
   return (
     <table className="table">
       <thead><tr><th>Team</th><th className="r">Rating</th><th className="r">Purse</th><th className="r">Squad</th><th className="r">OS</th></tr></thead>
