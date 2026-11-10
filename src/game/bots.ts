@@ -3,7 +3,7 @@
 
 import type { TeamId } from '../data/teams';
 import { TEAM_IDS } from '../data/teams';
-import { RULES, nextBid, type BotLevel } from './rules';
+import { RULES, bidAtOrBelow, nextBid, type BotLevel } from './rules';
 import { playerById, type Player, type Role } from './players';
 import { hash01 } from './rng';
 import { retainable, retentionPlan, retentionError, bidBlock, overseasCount, reserveNeeded, shownTeam } from './engine';
@@ -205,6 +205,6 @@ export function botRtmRaise(s: GameState, o: RtmOffer): number | null {
   const max = botMaxBid(s, o.buyer, p);
   const next = nextBid(o.price, p.base);
   if (max < next || bidBlock(s.teams[o.buyer], p, next)) return null;
-  const raise = Math.round(Math.min(max, s.teams[o.buyer].purse - reserveNeeded(s.teams[o.buyer])) / 5) * 5;
+  const raise = bidAtOrBelow(Math.min(max, s.teams[o.buyer].purse - reserveNeeded(s.teams[o.buyer])), p.base);
   return raise > o.price ? raise : null;
 }

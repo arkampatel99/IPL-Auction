@@ -27,13 +27,17 @@ export const RULES = {
   miniPurse2026: { KKR: 6430, CSK: 4340, SRH: 2550, LSG: 2295, DC: 2180, RCB: 1640, RR: 1605, GT: 1290, PBKS: 1150, MI: 275 },
 } as const;
 
+/** Every raise is the same size, so the auto-bid slider lands exactly on real bids. */
+export const BID_STEP = 25;
+
 /** Next bid after `current` (null = opening bid at base price). */
 export function nextBid(current: number | null, base: number): number {
-  if (current === null) return base;
-  if (current < 100) return current + 5;
-  if (current < 200) return current + 10;
-  if (current < 500) return current + 20;
-  return current + 25;
+  return current === null ? base : current + BID_STEP;
+}
+
+/** The highest real bid (base + whole steps) at or below `limit`. */
+export function bidAtOrBelow(limit: number, base: number): number {
+  return limit < base ? base : base + Math.floor((limit - base) / BID_STEP) * BID_STEP;
 }
 
 /** Cost of each retention, in the order players were picked. */

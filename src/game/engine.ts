@@ -62,10 +62,15 @@ export interface GameState {
   currentSet?: string;
   sets?: Record<string, SetInfo>; // set of every player in this auction's pool
   released?: string[];             // mini: players you released, auctioned first
+  /** 2 = everything runs twice as fast: the clock, bots and the pauses between players. */
+  speed?: 1 | 2;
   ready?: TeamId[];                // teams whose person has confirmed retentions or releases
   intro?: SetIntro | null;
 }
 export interface SetIntro { set: string; name: string; players: string[] }
+
+/** Durations shrink at 2x speed. */
+const pace = (s: GameState, ms: number) => (s.speed === 2 ? ms / 2 : ms);
 
 const SOLD_HOLD_MS = 5500; // sold card stays for the whole 5 s team song
 const SET_INTRO_MS = 3500;
@@ -254,7 +259,8 @@ export function startAuction(s: GameState, now: number) {
     // Players you released come up first, as their own set.
     const released = (s.released ?? []).filter(id => !s.results[id]);
     for (const id of released) s.sets[id] = { code: 'RL', name: 'Released players', order: 0 };
-    s.queue = [...released, ...list.map(p => p.id)];
+    shuffleSets(s.sets, r);
+    s.queue = auctionOrder([...released, ...list.map(p => p.id)], s.sets, r);
   } else {
     let pool = PLAYERS.filter(p => !s.results[p.id]).map(p => p.id);
     if (s.settings.length === 'quick') {
@@ -265,6 +271,7 @@ export function startAuction(s: GameState, now: number) {
       pool = [...overseas, ...indian];
     }
     s.sets = assignSets(pool.map(id => playerById[id]));
+    shuffleSets(s.sets, r);
     s.queue = auctionOrder(pool, s.sets, r);
   }
   s.qi = -1;
@@ -310,12 +317,12 @@ function openNext(s: GameState, now: number) {
         : { set: set.code, name: set.name, players };
       log(s, `${s.intro.name}: ${players.length} players`);
       s.qi--;
-      s.hold = now + SET_INTRO_MS;
+      s.hold = now + pace(s, SET_INTRO_MS);
       return;
     }
     s.intro = null;
     const timer = s.round === 2 ? Math.min(s.settings.timer, RULES.timerAfterBid) : s.settings.timer;
-    s.lot = { playerId: id, bid: null, leader: null, endsAt: now + timer * 1000, plan: null };
+    s.lot = { playerId: id, bid: null, leader: null, endsAt: now + pace(s, timer * 1000), plan: null };
     return;
   }
   s.phase = 'done';
@@ -334,7 +341,7 @@ export function placeBid(s: GameState, team: TeamId, now: number): string | null
   lot.bid = amount;
   lot.leader = team;
   lot.plan = null;
-  lot.endsAt = Math.max(lot.endsAt, now + RULES.timerAfterBid * 1000);
+  lot.endsAt = Math.max(lot.endsAt, now + pace(s, RULES.timerAfterBid * 1000));
   return null;
 }
 
@@ -353,7 +360,7 @@ function sell(s: GameState, playerId: string, team: TeamId, price: number, how: 
 /** Pause between players so the result can be shown (and the tune played). */
 function holdThen(s: GameState, now: number, ms: number) {
   s.lot = null;
-  s.hold = now + ms;
+  s.hold = now + pace(s, ms);
 }
 
 function closeLot(s: GameState, now: number) {
@@ -371,7 +378,7 @@ function closeLot(s: GameState, now: number) {
   if (s.settings.mode === 'mega' && holder && holder !== lot.leader && !s.teams[holder].out) {
     const h = s.teams[holder];
     if (h.rtm > 0 && !bidBlock(h, p, lot.bid)) {
-      s.rtm = { playerId: p.id, holder, buyer: lot.leader, price: lot.bid, stage: 'match', at: now + 900 };
+      s.rtm = { playerId: p.id, holder, buyer: lot.leader, price: lot.bid, stage: 'match', at: now + pace(s, 900) };
       log(s, `${holder} can use RTM on ${p.name}`);
       return;
     }
@@ -386,7 +393,7 @@ export function rtmAnswer(s: GameState, useCard: boolean, now: number) {
   const o = s.rtm;
   if (!o || o.stage === 'raise') return;
   if (!useCard) { sell(s, o.playerId, o.buyer, o.price, 'bought', now); return; }
-  if (o.stage === 'match') { o.stage = 'raise'; o.at = now + 900; return; }
+  if (o.stage === 'match') { o.stage = 'raise'; o.at = now + pace(s, 900); return; }
   s.teams[o.holder].rtm--;
   sell(s, o.playerId, o.holder, o.price, 'rtm', now);
 }
@@ -404,7 +411,7 @@ export function rtmRaise(s: GameState, amount: number | null, now: number) {
   o.price = amount;
   if (bidBlock(s.teams[o.holder], p, amount)) { sell(s, o.playerId, o.buyer, amount, 'bought', now); return; }
   o.stage = 'final';
-  o.at = now + 900;
+  o.at = now + pace(s, 900);
   log(s, `${o.buyer} raised to ${fmt(amount)}`);
 }
 
@@ -440,9 +447,9 @@ export function tick(s: GameState, now: number) {
     const team = pickBidder(s, random(s));
     if (team) {
       const [lo, hi] = BOT_DELAY[s.settings.level];
-      let at = now + lo + random(s) * (hi - lo);
-      if (s.settings.level === 'hard' && random(s) < 0.25) at = lot.endsAt - 1200 - random(s) * 800;
-      lot.plan = { team, at: Math.max(now + 300, Math.min(at, lot.endsAt - 400)) };
+      let at = now + pace(s, lo + random(s) * (hi - lo));
+      if (s.settings.level === 'hard' && random(s) < 0.25) at = lot.endsAt - pace(s, 1200 + random(s) * 800);
+      lot.plan = { team, at: Math.max(now + pace(s, 300), Math.min(at, lot.endsAt - pace(s, 400))) };
     }
   }
   if (now >= lot.endsAt && s.lot === lot) closeLot(s, now);
@@ -461,6 +468,34 @@ export function skipLot(s: GameState, now: number) {
   for (let o = s.rtm as RtmOffer | null; o && !s.teams[o.stage === 'raise' ? o.buyer : o.holder].human; o = s.rtm as RtmOffer | null) {
     o.at = now;
     tick(s, now);
+  }
+}
+
+/** Switch between normal and 2x speed; the player on the block keeps the same share of his clock. */
+export function setSpeed(s: GameState, speed: 1 | 2, now: number) {
+  if ((s.speed ?? 1) === speed) return;
+  const k = speed === 2 ? 0.5 : 2;
+  if (s.lot && !s.paused) { s.lot.endsAt = now + Math.max(0, s.lot.endsAt - now) * k; s.lot.plan = null; }
+  if (s.hold) s.hold = now + Math.max(0, s.hold - now) * k;
+  s.speed = speed;
+}
+
+/**
+ * Sets come up in a different order every auction: inside each round (set 1s, set 2s, ...) the
+ * capped categories are shuffled among themselves, then the uncapped ones. Marquee and released-player sets stay first.
+ */
+function shuffleSets(sets: Record<string, SetInfo>, r: () => number) {
+  const byCode = new Map<string, SetInfo[]>();
+  for (const info of Object.values(sets)) (byCode.get(info.code) ?? byCode.set(info.code, []).get(info.code)!).push(info);
+  // Capped sets still come before uncapped ones in each round, as in the real auction.
+  const round = (code: string) => Number(/(\d+)$/.exec(code)?.[1] ?? 0) * 2 + (code.startsWith('U') ? 1 : 0);
+  const fixed = (code: string) => code === 'RL' || /^M\d/.test(code);
+  const rounds = new Map<number, string[]>();
+  for (const code of byCode.keys()) if (!fixed(code)) (rounds.get(round(code)) ?? rounds.set(round(code), []).get(round(code))!).push(code);
+  for (const codes of rounds.values()) {
+    const orders = codes.map(c => byCode.get(c)![0].order).sort((a, b) => a - b);
+    const mixed = codes.map(c => ({ c, k: r() })).sort((a, b) => a.k - b.k).map(x => x.c);
+    mixed.forEach((c, i) => { for (const info of byCode.get(c)!) info.order = orders[i]; });
   }
 }
 

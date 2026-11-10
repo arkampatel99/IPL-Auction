@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TEAM_IDS, teamById, type TeamId } from '../data/teams';
-import { RULES, nextBid } from '../game/rules';
+import { BID_STEP, RULES, bidAtOrBelow, nextBid } from '../game/rules';
 import { playerById, roleLabel, starLabel, type Player, type Role } from '../game/players';
 import {
   bidBlock, currentPlayer, setOf, shownTeam, nextAmount, overseasCount, placeBid, reserveNeeded, rtmAnswer, rtmRaise,
-  playingTeams, setPaused, skipLot, type GameState,
+  playingTeams, setPaused, setSpeed, skipLot, type GameState,
 } from '../game/engine';
 import { TARGET } from '../game/bots';
 import { squadReport } from '../game/squad';
@@ -75,6 +75,13 @@ export default function Auction({ state, act, guest }: { state: GameState; act: 
         {!guest && (
           <button type="button" className="btn sm" onClick={() => { primeVoice(); act((s, now) => setPaused(s, !s.paused, now)); }}>
             {state.paused ? 'Resume' : 'Pause'}
+          </button>
+        )}
+        {!guest && (
+          <button type="button" className={`btn sm${state.speed === 2 ? ' primary' : ''}`} aria-pressed={state.speed === 2}
+            aria-label={`Speed ${state.speed === 2 ? '2x' : '1x'}, tap to change`} title="Tap to switch between normal speed and twice as fast"
+            onClick={() => act((s, now) => setSpeed(s, s.speed === 2 ? 1 : 2, now))}>
+            {state.speed === 2 ? '2x' : '1x'}
           </button>
         )}
         <div className="menu-wrap">
@@ -607,9 +614,9 @@ function AutoBid({ state, act }: { state: GameState; act: Act }) {
   const p = playerById[lot.playerId];
   const me = state.settings.team;
   const [limit, setLimit] = useState<number | null>(null);
-  const [draft, setDraft] = useState(() => Math.max(p.base, Math.round((p.value * 1.1) / 5) * 5));
+  const [draft, setDraft] = useState(() => bidAtOrBelow(p.value * 1.1, p.base));
   const scheduled = useRef('');
-  useEffect(() => { setLimit(null); setDraft(Math.max(p.base, Math.round((p.value * 1.1) / 5) * 5)); }, [p.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setLimit(null); setDraft(bidAtOrBelow(p.value * 1.1, p.base)); }, [p.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const amount = nextAmount(state);
   const blocked = bidBlock(state.teams[me], p, amount);
@@ -623,7 +630,12 @@ function AutoBid({ state, act }: { state: GameState; act: Act }) {
     return () => clearTimeout(t);
   }, [canAuto, lot.bid, lot.playerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const step = (dir: 1 | -1) => setDraft(d => Math.max(p.base, dir > 0 ? nextBid(d, p.base) : d - (d > 500 ? 25 : d > 200 ? 20 : d > 100 ? 10 : 5)));
+  // Slider range: the next bid up to the most you can spend on him, on the same 25 L steps as the bidding.
+  const t = state.teams[me];
+  const lo = amount;
+  // Up to 3x his fair value (at least 20 steps), never more than you can afford, so the slider stays easy to set.
+  const hi = Math.max(lo, Math.min(bidAtOrBelow(t.purse - reserveNeeded(t), p.base), bidAtOrBelow(Math.max(p.value * 3, lo + 20 * BID_STEP), p.base)));
+  const value = Math.min(hi, Math.max(lo, draft));
   if (limit !== null) {
     const done = amount > limit || Boolean(blocked);
     return (
@@ -635,13 +647,14 @@ function AutoBid({ state, act }: { state: GameState; act: Act }) {
   }
   return (
     <div className="autobid">
-      <span className="small muted">Auto-bid up to</span>
-      <span className="autobid-stepper">
-        <button type="button" className="btn sm" onClick={() => step(-1)} aria-label="Lower">−</button>
-        <b className="num">{money(draft)}</b>
-        <button type="button" className="btn sm" onClick={() => step(1)} aria-label="Higher">+</button>
+      <span className="small muted autobid-label"><span className="hide-phone-text">Auto-bid up to </span><span className="show-phone">Auto </span><b className="num autobid-val">{money(value)}</b></span>
+      <span className="autobid-range">
+        <button type="button" className="btn sm" onClick={() => setDraft(Math.max(lo, value - BID_STEP))} aria-label="25 lakh lower">−</button>
+        <input type="range" className="autobid-slider" min={lo} max={hi} step={BID_STEP} value={value} disabled={hi <= lo && Boolean(blocked)}
+          aria-label="Auto-bid limit" onChange={e => setDraft(Number(e.target.value))} />
+        <button type="button" className="btn sm" onClick={() => setDraft(Math.min(hi, value + BID_STEP))} aria-label="25 lakh higher">+</button>
       </span>
-      <button type="button" className="btn sm primary" onClick={() => setLimit(draft)}>Start</button>
+      <button type="button" className="btn sm primary" disabled={Boolean(blocked)} onClick={() => setLimit(value)}>Start</button>
     </div>
   );
 }
@@ -1000,7 +1013,7 @@ function RtmDialog({ state, act }: { state: GameState; act: Act }) {
   const decider = o.stage === 'raise' ? o.buyer : o.holder;
   if (decider !== me) return null;
   const amount = Math.max(raise, minRaise);
-  const step = (dir: 1 | -1) => setRaise(Math.max(minRaise, dir > 0 ? nextBid(amount, p.base) : amount - (amount > 500 ? 25 : amount > 200 ? 20 : 10)));
+  const step = (dir: 1 | -1) => setRaise(Math.max(minRaise, amount + dir * BID_STEP));
   const other = o.stage === 'raise' ? o.holder : o.buyer;
 
   return (

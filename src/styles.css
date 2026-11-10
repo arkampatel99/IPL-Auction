@@ -1400,3 +1400,16 @@ main.page { overflow-x: hidden; overflow-x: clip; }
 .update-bar { position: fixed; left: 50%; top: 8px; transform: translateX(-50%); z-index: 60; width: min(560px, calc(100% - 24px));
   display: flex; align-items: center; gap: 10px; justify-content: space-between; padding: 8px 10px 8px 14px; border-radius: 10px;
   background: var(--surface); border: 1px solid var(--accent); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3); font-size: 13px; }
+
+/* auto-bid slider */
+.autobid-slider { flex: 1; min-width: 120px; accent-color: var(--ink); height: 28px; }
+.autobid-val { color: var(--ink); }
+.autobid-range { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 180px; }
+.autobid-range .btn { min-width: 34px; padding: 0 8px; }
+@media (max-width: 480px) {
+  .hide-phone-text { display: none; }
+  .autobid { flex-wrap: nowrap; }
+  .autobid-range { min-width: 0; gap: 4px; }
+  .autobid-slider { min-width: 40px; }
+  .autobid-label { white-space: nowrap; }
+}
