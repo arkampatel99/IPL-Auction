@@ -1314,3 +1314,84 @@ main.page { overflow-x: hidden; overflow-x: clip; }
 .menu-room li { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .menu-room li b { width: 40px; }
 .menu-room li span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* =====================================================================
+   Phones: the whole auction fits one screen (no scrolling needed).
+   One auctioneer line inside the bid bar, slimmer cards, one-line tips.
+   ===================================================================== */
+@media (max-width: 999px) {
+  .stage-wide { display: none !important; }
+  .bidbar-wrap .stage-narrow { display: block !important; }
+  .auction { gap: 6px; padding-top: 6px; }
+  .auction .center { gap: 6px !important; }
+
+  /* team strip */
+  .team-chip { padding: 4px 8px; min-width: 112px; }
+  .team-chip .purse-bar { margin-top: 2px; }
+
+  /* tips as one line */
+  .tips { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; padding: 6px 10px !important; }
+  .tips > .row { display: contents; }
+  .tips > .row > b { display: none; }
+  .tips ol { order: -1; display: flex; flex-wrap: wrap; gap: 2px 10px; margin: 0; padding: 0; list-style: none; font-size: 11.5px; color: var(--muted); }
+  .tips .btn { min-height: 28px; padding: 0 10px; font-size: 12px; }
+
+  /* player card */
+  .lot.glass { padding: 8px 10px !important; gap: 6px !important; }
+  .lot-wrap .photo { width: 54px !important; height: 62px !important; }
+  .lot.glass .lot-head { gap: 10px; }
+  .lot.glass .lot-head .stack { gap: 3px !important; }
+  .lot.glass .lot-name { font-size: 18px !important; line-height: 1.15; }
+  .lot.glass .tag { height: 19px; font-size: 10.5px; }
+  .lot.glass .stats { gap: 4px; }
+  .lot.glass .stat { padding: 4px 7px !important; }
+  .lot.glass .stat .k { font-size: 9.5px; }
+  .lot.glass .stat .v { font-size: 14px !important; }
+  .lot.glass .fair { padding: 3px 8px; font-size: 11.5px; }
+  .lot.glass > .small { font-size: 11px; }
+  .lot.glass .set-progress { margin-top: -2px; }
+  .lot.glass .more-toggle { padding: 0 2px; min-height: 24px; font-size: 12px; }
+  .prev-team .logo { width: 26px !important; height: 26px !important; }
+  .next-line { padding: 4px 10px; }
+
+  /* bid bar */
+  .bidbar-wrap { padding: 6px 10px calc(6px + env(safe-area-inset-bottom)) !important; }
+  .bidpanel { gap: 4px !important; }
+  .bidpanel .banner { padding: 3px 8px; font-size: 12px; }
+  .bidpanel .price { font-size: 19px !important; padding: 0 8px; margin-top: 0; }
+  .bidpanel > .row.between:first-of-type .small, .bidpanel > .banner + .row.between .small { font-size: 10.5px; }
+  .bidpanel .logo { width: 30px !important; height: 30px !important; }
+  .bidpanel > .row.between.small { font-size: 11px; }
+  .bidpanel .clock { height: 4px; }
+  .bidbar-wrap .stage.compact { min-height: 0; }
+  .bidbar-wrap .stage.compact .auctioneer { width: 34px !important; height: 38px !important; }
+  .bidbar-wrap .stage.compact .bubble { padding: 4px 10px; font-size: 12.5px; }
+  .bidbar-wrap .team-call.small .logo { width: 18px !important; height: 18px !important; }
+  .bidbar-wrap .autobid { padding: 3px 6px; gap: 6px; }
+  .bidbar-wrap .autobid .btn { min-height: 30px; }
+  .bidbar-wrap .autobid .small, .bidbar-wrap .autobid span { font-size: 12px; }
+  .bidbar .btn.big { min-height: 44px; font-size: 16px; }
+}
+@media (max-width: 999px) {
+  /* Top chips follow the bidding: your team first, the current highest bidder next to it. */
+  .team-strip .team-chip.mine { order: -2; }
+  .team-strip .team-chip.leading:not(.mine) { order: -1; animation: chip-in 0.3s ease-out; }
+  @keyframes chip-in { from { opacity: 0.35; } to { opacity: 1; } }
+}
+@media (max-width: 999px) and (min-height: 820px) {
+  /* Taller phones: use the spare height for a bigger player card. */
+  .lot-wrap .photo { width: 72px !important; height: 84px !important; }
+  .lot.glass { padding: 12px 12px !important; gap: 9px !important; }
+  .lot.glass .lot-name { font-size: 21px !important; }
+  .lot.glass .stat { padding: 8px 9px !important; }
+  .lot.glass .stat .k { font-size: 11px; }
+  .lot.glass .stat .v { font-size: 18px !important; }
+  .lot.glass .fair { padding: 6px 10px; font-size: 13px; }
+  .auction .center { gap: 10px !important; }
+  .bidpanel { gap: 6px !important; }
+  .bidpanel .price { font-size: 22px !important; }
+}
+@media (max-width: 999px) and (max-height: 700px) {
+  /* Very short phones: drop the next-player line so the bid bar never covers the card. */
+  .next-line { display: none !important; }
+}
