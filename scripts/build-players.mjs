@@ -443,6 +443,11 @@ async function main() {
     const open = JSON.parse(fs.readFileSync(openFile, 'utf8'));
     for (const p of out) if (!p.img && open[p.id]) { p.img = open[p.id].url; p.imgCredit = open[p.id].credit; }
   }
+  // Hand-picked face shots where the automatic pick is a distant or action photo.
+  const FACE_SHOTS = {
+    'Mohammed Shami': 'https://commons.wikimedia.org/wiki/Special:FilePath/Mohammed%20Shami%20%28cropped%29.jpg?width=240',
+  };
+  for (const p of out) if (FACE_SHOTS[p.name]) p.img = FACE_SHOTS[p.name];
   out.sort((a, b) => a.name.localeCompare(b.name));
   fs.mkdirSync(path.dirname(OUT), { recursive: true });
   fs.writeFileSync(OUT, JSON.stringify(out));
