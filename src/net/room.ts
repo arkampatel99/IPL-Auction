@@ -614,7 +614,8 @@ export function personName(state: GameState, team: TeamId): string | null {
   if (saved) return saved;
   const seats = host?.lobby.seats ?? guest?.lobby?.seats;
   const seat = seats?.[team];
-  return seat?.name ?? 'Friend';
+  // No room name for this team: on your own device that's you.
+  return seat?.name ?? (team === state.settings.team ? 'You' : 'Friend');
 }
 
 /** True while the friend playing this team is unreachable (their seat is being kept for them). */
