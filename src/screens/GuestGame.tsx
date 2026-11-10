@@ -84,7 +84,7 @@ export default function GuestGame() {
         <div className="hero">
           <h1>{lobby ? `${lobby.host}'s room` : room.error ? 'Not connected' : 'Connecting…'}</h1>
           <p className="muted">
-            {!lobby ? (room.error ? `Room ${code.toUpperCase()}` : `Joining room ${code.toUpperCase()}${room.attempt > 1 ? ` · try ${room.attempt} of 3` : ''}…`)
+            {!lobby ? (room.error ? `Room ${code.toUpperCase()}` : `Joining room ${code.toUpperCase()}${room.via === 'relay' ? ' · using the backup route' : ''}…`)
               : late ? (myTeam ? `You're ${teamById[myTeam].name}. Joining the auction…` : 'The auction is on. Pick a bot team to take it over from here.')
               : myTeam ? `You're ${teamById[myTeam].name}. Waiting for the host to start.` : 'Pick a free team.'}
           </p>

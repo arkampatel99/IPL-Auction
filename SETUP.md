@@ -99,22 +99,14 @@ the room ends.
   The host finds the link in the auction **Menu** (Copy invite link). If a friend leaves, a bot takes their team back.
 - Team chips show who plays each team (name, You, or Bot), and the Menu lists everyone in the room.
 
-### If friends get stuck on "Connecting"
+### Connection routes
 
-Home Wi-Fi usually connects directly. Phones on mobile data or office networks often need a relay (TURN server).
-Get a free one from Metered (metered.ca, free plan), then in Vercel, Project, Settings, Environment Variables add:
+1. **Direct** (WebRTC via PeerJS): used first, fastest, works on most Wi-Fi.
+2. **Backup relay**: if the direct route doesn't open within 7 seconds (common on mobile data, where carriers
+   block phone-to-phone links), the app switches by itself to a relay through the public HiveMQ MQTT broker over
+   a secure WebSocket (`src/net/relay.ts`). No account needed. Game updates are gzipped and sent up to 2.5 times a second.
+   Add `?relay=1` to an invite link to force the relay. Set `VITE_RELAY_URL` to use another broker.
 
-```
-VITE_TURN_CREDENTIALS_URL = https://<your-app>.metered.live/api/v1/turn/credentials?apiKey=<your key>
-```
-
-or, for any other TURN server:
-
-```
-VITE_TURN_URL        = turn:your.server:3478,turns:your.server:443
-VITE_TURN_USERNAME   = ...
-VITE_TURN_CREDENTIAL = ...
-```
-
-Redeploy after adding them. Also ask the host to keep the auction on screen: phones pause background tabs,
-and the room reconnects when the host comes back.
+The public broker is shared: room messages are not private, so don't send anything personal in names.
+For a private relay, set `VITE_RELAY_URL` to your own broker, or add a TURN server with
+`VITE_TURN_CREDENTIALS_URL` (Metered) or `VITE_TURN_URL` + `VITE_TURN_USERNAME` + `VITE_TURN_CREDENTIAL`.
