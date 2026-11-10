@@ -20,8 +20,11 @@ export function saveGame(s: GameState | null) {
 export function useGame() {
   const [state, setState] = useState<GameState | null>(() => {
     const s = loadGame();
+    // Taking over hosting from a friend who left: carry straight on, no pause.
+    let takeover = false;
+    try { takeover = Date.now() - Number(sessionStorage.getItem('ipl-auction-takeover') ?? 0) < 10000; } catch { /* storage off */ }
     // Coming back to a saved game: pause it so the clock doesn't run out while away.
-    if (s && s.phase === 'auction' && s.lot && !s.paused) s.paused = { left: Math.max(5000, s.lot.endsAt - Date.now()) };
+    if (!takeover && s && s.phase === 'auction' && s.lot && !s.paused) s.paused = { left: Math.max(5000, s.lot.endsAt - Date.now()) };
     return s;
   });
 

@@ -163,6 +163,13 @@ export async function unpack<T>(data: Uint8Array): Promise<T | null> {
   } catch { return null; }
 }
 
+/** Uncompressed, synchronous packing for a last message while the page is closing. */
+export function packSync(value: unknown): Uint8Array {
+  const json = enc.encode(JSON.stringify(value));
+  const out = new Uint8Array(json.length + 1); out[0] = 0; out.set(json, 1);
+  return out;
+}
+
 /** Sends packed messages in order (packing is async). */
 export function orderedSender(relay: Relay, topic: string) {
   let chain = Promise.resolve();

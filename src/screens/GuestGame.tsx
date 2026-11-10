@@ -4,7 +4,8 @@ import { teamById, type TeamId } from '../data/teams';
 import type { GameState } from '../game/engine';
 import { TopBar } from '../ui/common';
 import { useTeamTheme } from '../ui/theme';
-import { guestRoom, joinRoom, type GuestRoom } from '../net/room';
+import { guestRoom, joinRoom, resumeRoom, takeoverLobby, type GuestRoom } from '../net/room';
+import { saveGame } from './useGame';
 import Auction from './Auction';
 import Results from './Results';
 import Retention from './Retention';
@@ -25,7 +26,9 @@ export default function GuestGame() {
     const r = guestRoom();
     if (r && r.code === code.toUpperCase()) return r;
     // Came from "Join a room" with a name already typed: connect straight away.
-    const typed = (location.state as { join?: string } | null)?.join?.trim();
+    let typed = (location.state as { join?: string } | null)?.join?.trim();
+    // A host who was replaced while away rejoins as a player straight away.
+    try { if (!typed && sessionStorage.getItem('ipl-auction-stepped-down')) { sessionStorage.removeItem('ipl-auction-stepped-down'); typed = savedName() || 'Host'; } } catch { /* storage off */ }
     return typed ? joinRoom(code, typed) : null;
   });
   const [, setV] = useState(0);
@@ -36,7 +39,23 @@ export default function GuestGame() {
     return () => { room.listeners.delete(f); };
   }, [room]);
 
-  const myTeam = room?.lobby ? (Object.entries(room.lobby.seats).find(([, s]) => s!.peer === room.me)?.[0] as TeamId | undefined) ?? null : null;
+  const myTeam: TeamId | null = room?.lobby ? room.mine() : null;
+  const [hostError, setHostError] = useState('');
+
+  // The host left and it's my turn: carry on hosting from my copy of the game.
+  useEffect(() => {
+    if (!room?.takeover || !myTeam || !room.state || !room.lobby) return;
+    const state = structuredClone(room.state);
+    state.settings.team = myTeam;
+    const lobby = takeoverLobby(room.lobby, myTeam, name.trim() || savedName() || 'Friend');
+    room.close();
+    saveGame(state);
+    try { sessionStorage.setItem('ipl-auction-takeover', String(Date.now())); } catch { /* storage off */ }
+    resumeRoom(lobby).then(
+      () => nav('/game', { replace: true }),
+      () => setHostError('The host left and this device could not take over. Check your internet.'),
+    );
+  }, [room?.takeover]); // eslint-disable-line react-hooks/exhaustive-deps
   useTeamTheme(myTeam);
 
   // This viewer's copy of the host's state: "me" is my team.
@@ -74,7 +93,16 @@ export default function GuestGame() {
       const Step = view.settings.mode === 'mini' ? Release : Retention;
       return <Step state={view} guest confirm={ids => room.send({ t: 'squad', ids })} />;
     }
-    return <Auction state={view} act={act} guest />;
+    return (
+      <>
+        <Auction state={view} act={act} guest />
+        {(room.hostGone || hostError) && (
+          <div className="update-bar" role="status">
+            <span>{hostError || (room.takeover ? 'The host left. You are taking over hosting…' : 'The host left. Moving the auction to another player…')}</span>
+          </div>
+        )}
+      </>
+    );
   }
 
   // 3. Lobby: pick a free team and wait for the host, or join a running auction by taking a bot's team.

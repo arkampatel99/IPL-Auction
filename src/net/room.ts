@@ -6,7 +6,7 @@
 //     switches to the relay if the direct route doesn't open within a few seconds.
 
 import Peer, { type DataConnection } from 'peerjs';
-import { openRelay, orderedSender, unpack, type Relay } from './relay';
+import { openRelay, orderedSender, packSync, unpack, type Relay } from './relay';
 import type { TeamId } from '../data/teams';
 import type { GameState, Settings } from '../game/engine';
 
@@ -84,6 +84,8 @@ export interface Lobby {
   settings: Omit<Settings, 'team' | 'seed' | 'humans'>;
   seats: Partial<Record<TeamId, Seat>>;
   started: boolean;
+  /** Goes up by one each time someone else takes over hosting, so everyone follows the newest host. */
+  epoch?: number;
 }
 
 /** Guest → host */
@@ -101,7 +103,9 @@ export type HostMsg =
   | { t: 'lobby'; lobby: Lobby }
   | { t: 'state'; state: GameState; now: number }
   | { t: 'error'; text: string }
-  | { t: 'pong' };
+  | { t: 'pong' }
+  /** The host is closing the page: someone else should take over now. */
+  | { t: 'bye' };
 
 type Listener = () => void;
 
@@ -130,13 +134,24 @@ export const hostRoom = () => host;
 const topicOf = (code: string, to: 'host' | 'guests') => `iplauctionroom/v1/${code.toUpperCase()}/${to}`;
 const RELAY_STATE_MS = 400;
 
-export async function createRoom(name: string, team: TeamId, settings: Lobby['settings']): Promise<HostRoom> {
+export function createRoom(name: string, team: TeamId, settings: Lobby['settings']): Promise<HostRoom> {
   const code = newCode();
+  return openHost(code, { code, host: name, settings, seats: { [team]: { name, peer: 'host', cid: deviceId() } }, started: false, epoch: 0 }, false);
+}
+
+/** A friend takes over hosting a running room (the host left): same code, the friend's latest copy of the lobby. */
+export function resumeRoom(lobby: Lobby): Promise<HostRoom> {
+  return openHost(lobby.code, lobby, true);
+}
+
+async function openHost(code: string, lobby: Lobby, resuming: boolean): Promise<HostRoom> {
   const iceList = await iceServers();
-  const peer = new Peer(PREFIX + code, { config: { iceServers: iceList } });
-  keepAlive(peer);
   const relay = openRelay();
-  const toGuests = orderedSender(relay, topicOf(code, 'guests'));
+  const send = orderedSender(relay, topicOf(code, 'guests'));
+  // Every host message carries the host number and this device's id, so guests follow only the newest host
+  // (and, if two friends took over at once, the same one of the two).
+  const myHid = deviceId() || Math.random().toString(36).slice(2, 12);
+  const toGuests = (v: { to?: string; msg: HostMsg }) => send({ ...v, e: room.lobby.epoch ?? 0, h: myHid });
   const relayCount = () => [...room.peers.values()].filter(l => l.via === 'relay').length;
 
   // Game state over the relay: at most every 400 ms, always the latest.
@@ -150,7 +165,7 @@ export async function createRoom(name: string, team: TeamId, settings: Lobby['se
   };
 
   const room: HostRoom = {
-    lobby: { code, host: name, settings, seats: { [team]: { name, peer: 'host' } }, started: false },
+    lobby,
     peers: new Map(),
     listeners: new Set(),
     sendLobby() {
@@ -164,8 +179,25 @@ export async function createRoom(name: string, team: TeamId, settings: Lobby['se
       room.peers.forEach(l => { if (l.via === 'direct') l.send(msg); });
       if (relayCount()) relayState(msg);
     },
-    close() { clearInterval(sweep); clearTimeout(relayTimer); peer.destroy(); relay.close(); host = null; },
+    close() {
+      closed = true;
+      clearInterval(sweep); clearTimeout(relayTimer); clearTimeout(claimTimer);
+      window.removeEventListener('pagehide', bye);
+      peer?.destroy(); relay.close();
+      if (host === room) host = null;
+    },
   };
+  let closed = false;
+  let peer: Peer | null = null;
+  let claimTimer = 0;
+
+  // Closing the page: tell everyone at once, so a friend takes over hosting straight away.
+  const bye = () => {
+    if (closed) return;
+    room.peers.forEach(l => { if (l.via === 'direct') l.send({ t: 'bye' }); });
+    relay.publish(topicOf(code, 'guests'), packSync({ msg: { t: 'bye' }, e: room.lobby.epoch ?? 0, h: myHid }));
+  };
+  window.addEventListener('pagehide', bye);
 
   // A closed tab can take a minute to show up as a closed connection, so guests ping every 3 s
   // and anyone silent for 12 s counts as gone (a bot takes their team back).
@@ -204,6 +236,10 @@ export async function createRoom(name: string, team: TeamId, settings: Lobby['se
 
   const receive = (link: Link, msg: GuestMsg) => {
     seen.set(link.peer, Date.now());
+    // Heard from someone marked away: they're back.
+    for (const st of Object.values(room.lobby.seats) as Seat[]) {
+      if (st.peer === link.peer && st.away) { delete st.away; room.sendLobby(); }
+    }
     if (msg.t === 'ping') { link.send({ t: 'pong' }); return; }
     if (msg.t === 'hello') {
       link.label = String(msg.name ?? '').slice(0, 20);
@@ -252,8 +288,27 @@ export async function createRoom(name: string, team: TeamId, settings: Lobby['se
     if (seat) room.onAction?.(seat[0], msg);
   };
 
-  // Route 1: direct connections.
-  peer.on('connection', conn => {
+  // Route 1: direct connections. A new host may have to wait for the old host's id to be released.
+  const directReady = new Promise<void>((resolve, reject) => {
+    let first = true;
+    const claim = () => {
+      if (closed) return;
+      const p = new Peer(PREFIX + code, { config: { iceServers: iceList } });
+      peer = p;
+      keepAlive(p);
+      p.on('open', () => { if (first) { first = false; resolve(); } });
+      p.on('error', err => {
+        if (p.open) return;
+        p.destroy();
+        if (first && !resuming) { first = false; reject(err); return; }
+        if (String(err.type) === 'unavailable-id' || resuming) claimTimer = window.setTimeout(claim, 15000);
+      });
+      p.on('connection', onConnection);
+    };
+    claim();
+  });
+
+  function onConnection(conn: DataConnection) {
     const link: Link = {
       peer: conn.peer, label: '', via: 'direct',
       send: m => { if (conn.open) conn.send(m); },
@@ -262,6 +317,18 @@ export async function createRoom(name: string, team: TeamId, settings: Lobby['se
     conn.on('open', () => add(link));
     conn.on('data', raw => receive(link, raw as GuestMsg));
     conn.on('close', () => drop(link));
+  }
+
+  // Another friend took over hosting (we were thought gone): step down and rejoin as a player.
+  relay.subscribe(topicOf(code, 'guests'), async data => {
+    const env = await unpack<{ e?: number; h?: string }>(data);
+    if (!env || closed) return;
+    const e = env.e ?? 0, mine = room.lobby.epoch ?? 0;
+    const beaten = e > mine || (e === mine && resuming && Boolean(env.h) && env.h! < myHid);
+    if (!beaten) return;
+    room.close();
+    try { sessionStorage.setItem('ipl-auction-stepped-down', '1'); } catch { /* storage off */ }
+    window.location.assign(`/r/${code}`);
   });
 
   // Route 2: the relay. Guests write to the host topic as { from, msg }.
@@ -283,11 +350,10 @@ export async function createRoom(name: string, team: TeamId, settings: Lobby['se
     let fails = 0;
     const ok = () => { host = room; resolve(); };
     const bad = () => { if (++fails === 2) { room.close(); reject(new Error('offline')); } };
-    let direct = false;
-    peer.on('open', () => { if (!direct) { direct = true; ok(); } });
-    peer.on('error', () => { if (!direct) { direct = true; bad(); } });
+    directReady.then(ok, bad);
     relay.ready.then(ok, bad);
   });
+  if (resuming) room.sendLobby();
   return room;
 }
 
@@ -302,9 +368,35 @@ export interface GuestRoom {
   /** Which route is in use, or which one we're trying. */
   via: 'direct' | 'relay';
   me: string;          // my id in the room
+  /** The host has gone and it's my turn to take over hosting (the screen does the switch). */
+  takeover: boolean;
+  /** Someone is taking over from a host who left: shown while it happens. */
+  hostGone: boolean;
+  /** My team in the room's seats (under any id I've used). */
+  mine(): TeamId | null;
   listeners: Set<Listener>;
   send(msg: GuestMsg): void;
   close(): void;
+}
+
+/** How long the host can be silent before the first friend in line takes over (the next waits longer). */
+const TAKEOVER_MS = 20000;
+const TAKEOVER_STEP_MS = 10000;
+
+/**
+ * Build the lobby a friend hosts from: their latest copy, one host number higher, the old host's seat kept
+ * for them as away (they can come back as a player on the same device), everyone else away until they check in.
+ */
+export function takeoverLobby(old: Lobby, myTeam: TeamId, myName: string): Lobby {
+  const lobby: Lobby = structuredClone(old);
+  const now = Date.now();
+  lobby.epoch = (old.epoch ?? 0) + 1;
+  lobby.host = myName;
+  for (const [t, st] of Object.entries(lobby.seats) as [TeamId, Seat][]) {
+    if (t === myTeam) lobby.seats[t] = { name: myName, peer: 'host', cid: deviceId() };
+    else lobby.seats[t] = { ...st, peer: st.peer === 'host' ? 'gone-host' : st.peer, away: now };
+  }
+  return lobby;
 }
 
 let guest: GuestRoom | null = null;
@@ -336,9 +428,16 @@ export function joinRoom(code: string, name: string): GuestRoom {
   /** My team, remembered so I can take it back after switching routes (my id changes). */
   let want: TeamId | null = null;
   const seatOf = (id: string) => room.lobby && (Object.entries(room.lobby.seats) as [TeamId, Seat][]).find(([, s]) => s.peer === id)?.[0];
+  /** Every id I've had (direct, then relay): my seat may still be under an older one. */
+  const myIds = new Set<string>();
+  const mySeat = () => {
+    const seats = Object.entries(room.lobby?.seats ?? {}) as [TeamId, Seat][];
+    return seats.find(([, st]) => st.peer === room.me)?.[0] ?? seats.find(([, st]) => myIds.has(st.peer))?.[0] ?? null;
+  };
 
   const room: GuestRoom = {
-    code, lobby: null, state: null, error: null, connected: false, via: 'direct', me: '', listeners: new Set(),
+    code, lobby: null, state: null, error: null, connected: false, via: 'direct', me: '', takeover: false, hostGone: false, listeners: new Set(),
+    mine: () => mySeat(),
     send(msg) {
       if (room.via === 'direct') { if (conn?.open) conn.send(msg); }
       else toHost?.({ from: relayId, name, msg });
@@ -351,11 +450,25 @@ export function joinRoom(code: string, name: string): GuestRoom {
     },
   };
   const ping = window.setInterval(() => {
+    checkTakeover();
     if (!room.connected) return;
     room.send({ t: 'ping' });
     // No word from the host for 12 s (phone was asleep, link died quietly): reconnect and take my team back.
     if (Date.now() - lastHost > 12000) recover();
   }, 3000);
+  /** My place in line to take over hosting: friends in the order they joined, skipping anyone away. -1 = not in line. */
+  const myTurn = () => {
+    const seats = (Object.values(room.lobby?.seats ?? {}) as Seat[]).filter(st => st.peer !== 'host' && st.peer !== 'gone-host' && !st.away);
+    return seats.findIndex(st => st.peer === room.me || myIds.has(st.peer));
+  };
+  const checkTakeover = () => {
+    if (closed || room.takeover || !room.lobby?.started || !room.state || room.state.phase === 'done') return;
+    const silent = Date.now() - lastReal;
+    if (silent > TAKEOVER_MS * 0.6 && !room.hostGone) { room.hostGone = true; changed(); if (room.via === 'direct') recover(); }
+    const turn = myTurn();
+    if (turn < 0 || document.visibilityState !== 'visible') return;
+    if (silent > TAKEOVER_MS + turn * TAKEOVER_STEP_MS) { room.takeover = true; changed(); }
+  };
   const recover = () => {
     if (closed) return;
     want = (room.me && seatOf(room.me)) || want;
@@ -374,10 +487,28 @@ export function joinRoom(code: string, name: string): GuestRoom {
   const fail = (text: string) => { clearTimeout(timer); room.connected = false; room.error = text; changed(); };
 
   let lastHost = Date.now();
+  /** Last real word from a host (reconnect attempts don't count). */
+  let lastReal = Date.now();
+  let epoch = 0;
+  let hostId: string | undefined;
+  let hostEpoch = 0;
   let lastPick = 0;
-  const onHost = (msg: HostMsg) => {
+  const onHost = (msg: HostMsg, e = epoch) => {
+    if (e < epoch) return;            // an older host still talking after someone took over
+    if (e > epoch) { epoch = e; lastState = 0; }
+    if (msg.t === 'lobby' && room.lobby && (msg.lobby.epoch ?? 0) < (room.lobby.epoch ?? 0)) return;
+    if (msg.t === 'bye') {
+      // The host is closing: the first friend in line takes over in about 2 s.
+      lastReal = Date.now() - TAKEOVER_MS + 2000;
+      room.hostGone = true; changed();
+      // The new host will be reachable on the relay, so go there now.
+      if (room.via === 'direct') recover();
+      return;
+    }
     lastHost = Date.now();
-    if (msg.t === 'pong') return;
+    lastReal = Date.now();
+    if (room.hostGone) room.hostGone = false;
+    if (msg.t === 'pong') { changed(); return; }
     if (msg.t === 'lobby') {
       room.lobby = msg.lobby;
       if (want && seatOf(room.me) === want) want = null;
@@ -407,17 +538,25 @@ export function joinRoom(code: string, name: string): GuestRoom {
     if (closed || room.via === 'relay') return;
     want = (room.me && seatOf(room.me)) || null;
     room.via = 'relay';
+    if (room.me) myIds.add(room.me);
     room.me = relayId;
+    myIds.add(relayId);
     conn?.close(); peer?.destroy(); conn = null; peer = null;
     changed();
     const r = openRelay(RELAY_MS);
     relay = r;
     toHost = orderedSender(r, topicOf(code, 'host'));
     r.subscribe(topicOf(code, 'guests'), async data => {
-      const env = await unpack<{ to?: string; msg: HostMsg }>(data);
+      const env = await unpack<{ to?: string; msg: HostMsg; e?: number; h?: string }>(data);
       if (!env?.msg || (env.to && env.to !== relayId)) return;
+      if ((env.e ?? 0) < epoch) return;
+      // Two friends took over at the same moment: everyone follows the same one (lower id); the other steps down.
+      if ((env.e ?? 0) === epoch && env.h) {
+        if (!hostId || (env.e ?? 0) > hostEpoch) { hostId = env.h; hostEpoch = env.e ?? 0; }
+        else if (env.h !== hostId) { if (env.h < hostId) { hostId = env.h; lastState = 0; } else return; }
+      } else if (env.h) { hostId = env.h; hostEpoch = env.e ?? 0; }
       if (env.msg.t === 'lobby' && !room.connected) { clearInterval(hello); connectedNow(); }
-      onHost(env.msg);
+      onHost(env.msg, env.e ?? 0);
     });
     // Say hello until the host answers (the host may still be subscribing).
     const sayHello = () => toHost?.({ from: relayId, name, msg: { t: 'hello', name, cid } satisfies GuestMsg });
@@ -446,6 +585,7 @@ export function joinRoom(code: string, name: string): GuestRoom {
     p.on('open', id => {
       if (room.via !== 'direct') return;
       room.me = id;
+      myIds.add(id);
       const c = p.connect(PREFIX + code.toUpperCase(), { reliable: true });
       conn = c;
       c.on('open', () => { if (conn !== c) return; c.send({ t: 'hello', name, cid } satisfies GuestMsg); connectedNow(); });
@@ -482,3 +622,6 @@ export function isAway(team: TeamId): boolean {
   const seats = host?.lobby.seats ?? guest?.lobby?.seats;
   return Boolean(seats?.[team]?.away);
 }
+
+// Development only: let test scripts look at the room.
+if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__rooms = () => ({ host, guest });
