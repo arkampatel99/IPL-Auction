@@ -1,0 +1,7 @@
+# Uploaded to Vercel: the app source, public/ (including your team songs) and config.
+# Not uploaded: installed packages, the local build, and the large data download cache.
+node_modules
+dist
+.cache
+*.log
+players-without-photos.md

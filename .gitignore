@@ -1,0 +1,13 @@
+node_modules
+dist
+.cache
+.env*
+!.env.example
+*.log
+.vercel
+tsconfig.tsbuildinfo
+
+# Team songs you added yourself (private, not for publishing)
+public/sounds/*.mp3
+public/players/
+players-without-photos.md
