@@ -1278,8 +1278,8 @@ main.page:has(~ .bottom-cta) { padding-bottom: 96px; }
 .stage-wide .auctioneer { position: relative; z-index: 1; }
 
 /* Bid panel: a bidding console with a live tab and a scoreboard price */
-.bidbar-wrap { position: relative; }
 @media (min-width: 1000px) {
+  .bidbar-wrap { position: relative; }
   .bidbar-wrap { margin-top: 8px; border-top: 3px solid var(--accent) !important; }
   .bidbar-wrap:not(:has(.bidpanel)) { margin-top: 0; }
   .bidbar-wrap:has(.bidpanel)::before {
@@ -1294,3 +1294,16 @@ main.page:has(~ .bottom-cta) { padding-bottom: 96px; }
 }
 .bidpanel.mine .price { border-color: var(--sold); }
 :root[data-theme="light"] .bidpanel .price { background: var(--surface-2); }
+
+/* Mobile: never scroll sideways. The home ground outline fits the screen; pages clip stray overflow. */
+main.page { overflow-x: hidden; overflow-x: clip; }
+@media (max-width: 999px) { .home-hero > .stack:last-child::before { width: min(380px, 92vw); height: min(380px, 92vw); } }
+
+/* Mobile auction: the bid bar stays pinned above the browser's bottom bar, and the
+   page leaves room for it so nothing hides underneath. dvh follows the visible screen. */
+@media (max-width: 999px) {
+  html, body, #root { height: 100%; height: 100dvh; }
+  .bidbar-wrap:has(.bidpanel) { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.25); }
+  .app-shell:has(.bidbar-wrap .bidpanel) > main.auction { padding-bottom: calc(var(--bidbar-h, 260px) + 12px); }
+  .dialog.sheet { max-height: calc(100dvh - 32px); }
+}

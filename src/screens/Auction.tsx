@@ -54,8 +54,19 @@ export default function Auction({ state, act, guest }: { state: GameState; act: 
     return () => window.removeEventListener('keydown', onKey);
   }, [act]);
 
+  // Phones: the bid bar is pinned to the bottom, so the page leaves exactly its height free.
+  const shellRef = useRef<HTMLDivElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const bar = barRef.current, shell = shellRef.current;
+    if (!bar || !shell || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => shell.style.setProperty('--bidbar-h', `${Math.ceil(bar.getBoundingClientRect().height)}px`));
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, []);
+
   return (
-    <div className="app-shell">
+    <div className="app-shell" ref={shellRef}>
       <TopBar>
         <button type="button" className={`btn sm${panel ? ' primary' : ''}`} aria-expanded={panel} onClick={() => setPanel(o => !o)}>
           <span className="btn-label">Players & squads</span><span className="show-phone" aria-hidden>Lists</span>
@@ -99,7 +110,7 @@ export default function Auction({ state, act, guest }: { state: GameState; act: 
             : state.hold && state.intro ? <SetIntroCard state={state} />
             : state.hold ? <ResultCard state={state} /> : null}
           <div className="stage-wide"><AuctioneerStage state={state} call={call} /></div>
-          <div className="bidbar-wrap"><BidPanel state={state} act={act} outbidBy={outbidBy} call={call} rating={ratings[state.settings.team]} multi={multi} /></div>
+          <div className="bidbar-wrap" ref={barRef}><BidPanel state={state} act={act} outbidBy={outbidBy} call={call} rating={ratings[state.settings.team]} multi={multi} /></div>
         </section>
         {panel && (
           <aside className="right card drawer" aria-label="Players and squads">
