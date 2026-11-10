@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="15" fill="#0B0B0B"/>
+  <!-- sound block -->
+  <rect x="9" y="48" width="30" height="8" rx="4" fill="#BDBDBD"/>
+  <!-- gavel, angled mid-strike -->
+  <g transform="rotate(-38 34 26)">
+    <rect x="31" y="27" width="6" height="28" rx="3" fill="#FFFFFF"/>
+    <rect x="18" y="13" width="32" height="15" rx="4.5" fill="#FFFFFF"/>
+    <rect x="23" y="13" width="3" height="15" fill="#0B0B0B"/>
+    <rect x="42" y="13" width="3" height="15" fill="#0B0B0B"/>
+  </g>
+</svg>
