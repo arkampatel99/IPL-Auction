@@ -69,7 +69,7 @@ export default function Results({ state }: { state: GameState }) {
             <div className="pad" style={{ paddingBottom: 8 }}><h3>Leaderboard</h3></div>
             <table className="table">
               <thead>
-                <tr><th>#</th><th>Team</th><th className="r">Rating</th><th className="r hide-sm">Bat</th><th className="r hide-sm">Bowl</th><th className="r hide-sm">Value</th><th className="r hide-sm">Stars</th><th className="r">Spent</th></tr>
+                <tr><th>#</th><th>Team</th><th className="r">Rating</th><th className="r">Quality</th><th className="r">Value</th><th className="r hide-sm">Bat</th><th className="r hide-sm">Bowl</th><th className="r">Spent</th></tr>
               </thead>
               <tbody>
                 {ranked.map((x, i) => (
@@ -77,16 +77,16 @@ export default function Results({ state }: { state: GameState }) {
                     <td className="num">{i === 0 ? '1st' : i + 1}</td>
                     <td><TeamTag id={x.id} you={x.id === me} /></td>
                     <td className="r num"><b>{x.r.overall}</b> <span className="muted small">{x.r.grade}</span></td>
+                    <td className="r num">{x.r.quality}</td>
+                    <td className="r num">{x.r.value}</td>
                     <td className="r num hide-sm">{x.r.batting}</td>
                     <td className="r num hide-sm">{x.r.bowling}</td>
-                    <td className="r num hide-sm">{x.r.value}</td>
-                    <td className="r num hide-sm">{x.r.star}</td>
                     <td className="r num">{money(x.r.spent)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <p className="small muted pad">Tap a team to see its report. Rating = the average rating of your best XI (best players count a little more), plus up to 4 for big names. Gaps like no keeper or a short squad cost a few points.</p>
+            <p className="small muted pad">Tap a team to see its report. Rating = 60% squad quality + 40% value for money. Quality is your best XI's player ratings (best players count a little more), plus a little for big names, minus gaps like no keeper or a short squad. Value compares what your players are worth with what you paid: paying fair value scores 70, buying them 40% cheaper scores 90. Smart buys win.</p>
           </section>
         </div>
 
@@ -143,10 +143,11 @@ function Report({ row, rank, me, state }: { row: Row; rank: number; me: TeamId; 
         </div>
 
         <div className="stack" style={{ gap: 6 }}>
+          <Bar label="Squad quality" value={r.quality} />
+          <Bar label="Value for money" value={r.value} />
           <Bar label="Batting" value={r.batting} />
           <Bar label="Bowling" value={r.bowling} />
           <Bar label="Balance" value={r.balance} />
-          <Bar label="Value" value={r.value} />
           <Bar label="Bench" value={r.depth} />
           <Bar label="Star power" value={r.star} />
         </div>

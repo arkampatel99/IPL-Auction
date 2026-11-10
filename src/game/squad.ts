@@ -21,6 +21,7 @@ export function bestXI(t: TeamState): Player[] {
 export interface SquadReport {
   overall: number;      // 0–100, spread so differences show
   score: number;        // unrounded overall, for tie-breaks
+  quality: number;      // how good the squad is, before value for money
   grade: string;        // A+ … D
   batting: number;      // top 6 batting options in the XI
   bowling: number;      // top 5 bowling options in the XI
@@ -83,7 +84,9 @@ export function squadReport(t: TeamState, opts: { live?: boolean } = {}): SquadR
   // Value: what the squad is "worth" against what was paid (retentions count at their slab price).
   const spent = squad.reduce((a, x) => a + x.price, 0);
   const worth = squad.reduce((a, x) => a + x.p.value, 0);
-  const value = clamp(spent ? (worth / spent) * 70 : opts.live ? 70 : 0);
+  // Paid exactly fair value = 70; every 10% cheaper adds 5 (1.4x worth = 90), every 10% dearer takes 5.
+  const ratio = spent ? worth / spent : 1;
+  const value = squad.length ? clamp(70 + 50 * (ratio - 1)) : 0;
 
   const short = opts.live ? 0 : Math.max(0, RULES.squadMin - squad.length);
   if (short) weaknesses.push(`${short} short of the 18-player minimum`);
@@ -111,8 +114,11 @@ export function squadReport(t: TeamState, opts: { live?: boolean } = {}): SquadR
   const quality = xiRatings.length ? xiRatings.reduce((a, r, i) => a + r * weights[i], 0) / weights.slice(0, xiRatings.length).reduce((a, b) => a + b, 0) : 0;
   const topStars = squad.map(x => x.p.star).sort((a, b) => b - a).slice(0, 3);
   const starBonus = topStars.length ? Math.max(0, Math.min(4, (topStars.reduce((a, b) => a + b, 0) / topStars.length - 50) / 10)) : 0;
-  const finalAdjust = opts.live ? 0 : (balance - 100) * 0.06 + (depth - 60) * 0.05 + (value - 70) * 0.03 - short * 1.5;
-  const score = squad.length ? Math.max(0, Math.min(100, quality + starBonus + finalAdjust)) : 0;
+  const finalAdjust = opts.live ? 0 : (balance - 100) * 0.06 + (depth - 60) * 0.05 - short * 1.5;
+  // Squad quality: how good the players are. The final rating also rewards smart buying:
+  // 60% quality, 40% value for money, so a strong squad bought cheaply beats one bought at any price.
+  const squadQuality = squad.length ? Math.max(0, Math.min(100, quality + starBonus + finalAdjust)) : 0;
+  const score = squad.length ? Math.max(0, Math.min(100, 0.6 * squadQuality + 0.4 * value)) : 0;
   const overall = Math.round(score);
 
   const bought = squad.filter(x => x.how !== 'retained');
@@ -120,7 +126,7 @@ export function squadReport(t: TeamState, opts: { live?: boolean } = {}): SquadR
   const topBuy = bought.length ? bought.reduce((a, b) => (b.price > a.price ? b : a)) : null;
 
   return {
-    overall, score, grade: gradeOf(overall), batting, bowling, balance, depth, value, star, xi, strengths, weaknesses, spent,
+    overall, score, quality: Math.round(squadQuality), grade: gradeOf(overall), batting, bowling, balance, depth, value, star, xi, strengths, weaknesses, spent,
     bestBuy: bestBuy && { player: bestBuy.p, price: bestBuy.price },
     topBuy: topBuy && { player: topBuy.p, price: topBuy.price },
   };

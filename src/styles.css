@@ -1413,3 +1413,12 @@ main.page { overflow-x: hidden; overflow-x: clip; }
   .autobid-slider { min-width: 40px; }
   .autobid-label { white-space: nowrap; }
 }
+
+/* results leaderboard on phones: one line per team */
+@media (max-width: 480px) {
+  .results .table th, .results .table td { padding: 8px 4px; font-size: 13px; white-space: nowrap; }
+  .results .table th:first-child, .results .table td:first-child { padding-left: 10px; }
+  .results .table th:last-child, .results .table td:last-child { padding-right: 10px; }
+  .results .table .logo { display: none; }
+  .results .table td .muted.small { display: none; }
+}
