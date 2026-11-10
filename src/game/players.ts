@@ -151,23 +151,50 @@ function lastSeason(p: RawPlayer, capped: boolean): number | null {
 function finalRating(p: RawPlayer, record: number, capped: boolean, fromIPL: boolean) {
   const season = fromIPL ? lastSeason(p, capped) : null;
   let r = season === null ? record : 0.6 * record + 0.4 * season;
-  const k = CONTRACTS[p.id];
+  const k = CONTRACTS[p.id] ?? (SAME_PLAYER[p.id] ? CONTRACTS[SAME_PLAYER[p.id]] : undefined);
   const price = k?.p26 ?? (k?.p25 ? k.p25 * 0.6 : null);
   if (price) {
     const buzz = ratingFromPrice(price);
     // Big contracts say a lot; a base-price deal says little, and pulls a rating down only gently.
     const w = price >= 1000 ? 0.5 : price >= 400 ? 0.4 : price >= 150 ? 0.3 : 0.15;
-    const weight = buzz < r ? w * 0.5 : w;
+    // A short IPL record says little, so a big new contract counts for more (up to 75%).
+    const thin = 1 + (1 - Math.min(1, p.career.m / 30));
+    const weight = Math.min(0.75, (buzz < r ? w * 0.5 : w) * thin);
     r = r * (1 - weight) + buzz * weight;
-  } else if (!p.team && p.career.m > 0) {
-    r -= 5; // played in the IPL before, but no deal in 2025 or 2026: little buzz in the room
+  } else if (!p.team && (p.career.m > 0 || p.t20i || p.league)) {
+    r -= 5; // a known player, but no IPL deal in 2025 or 2026: little buzz in the room
   }
   const aura = (capped ? 1 : 0) + (LEGENDS.includes(p.name) ? 4 : STARS.includes(p.name) ? 2 : 0);
   return clamp(Math.round(r + aura), 35, 97);
 }
 
+/**
+ * The official auction list spells a few names differently from the stats data, so those players looked
+ * like new faces with no record. Official list id -> stats id: the list entry takes over the stats.
+ */
+const SAME_PLAYER: Record<string, string> = {
+  a71: '00ea847a',   // Mayank Agarawal = Mayank Agarwal
+  a41: '7c3c0337',   // Auqib Dar = Auqib Nabi (Dar)
+  a141: 'c27b5a0e',  // PV.Satyanarayana Raju = Satyanarayana Raju
+  a100: 'cb9b8664',  // William Orourke = William O'Rourke
+};
+
+function linked(): RawPlayer[] {
+  const all = raw as RawPlayer[];
+  const byId = new Map(all.map(p => [p.id, p]));
+  const merged = new Set(Object.values(SAME_PLAYER));
+  return all.filter(p => !merged.has(p.id)).map(p => {
+    const from = SAME_PLAYER[p.id] && byId.get(SAME_PLAYER[p.id]);
+    if (!from) return p;
+    const { career, recent, comps, t20i, league, team, bowlType } = from;
+    return { ...p, career, recent, comps, t20i, league, team: team ?? p.team, bowlType: p.bowlType ?? bowlType,
+      img: p.img || from.img, imgCredit: p.img ? p.imgCredit : from.imgCredit, capped: p.capped || from.capped,
+      short: from.short };
+  });
+}
+
 function build(): Player[] {
-  const list: Player[] = (raw as RawPlayer[]).map(p => {
+  const list: Player[] = linked().map(p => {
     // Cricsheet has no Afghanistan internationals, so its capped players look uncapped in the data.
     const capped = p.capped || p.country === 'Afghanistan';
     const useT20I = p.career.m < 8 && p.t20i;
