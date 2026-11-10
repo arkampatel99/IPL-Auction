@@ -15,6 +15,7 @@ import PageMeta from './ui/PageMeta';
 import Friends, { HostLobby } from './screens/Friends';
 import GuestGame from './screens/GuestGame';
 import { isAdmin } from './ui/admin';
+import UpdateBanner from './ui/UpdateBanner';
 
 void loadSongs();
 void loadPhotos();
@@ -23,6 +24,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
       <PageMeta />
+      <UpdateBanner />
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/bots" element={<BotSetup />} />
