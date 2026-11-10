@@ -5,3 +5,5 @@ dist
 .cache
 *.log
 players-without-photos.md
+.env*
+.vercel
