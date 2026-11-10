@@ -57,7 +57,17 @@ function keepAlive(peer: Peer) {
 export const newCode = () => Array.from({ length: 6 }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join('');
 export const inviteLink = (code: string) => `${window.location.origin}/r/${code}`;
 
-export interface Seat { name: string; peer: string | 'host' }
+export interface Seat { name: string; peer: string | 'host'; /** this device, so a returning friend gets their seat back */ cid?: string }
+
+/** A random id kept on this device, so the host can recognise a friend who reconnects. */
+function deviceId(): string {
+  const KEY = 'ipl-auction-cid';
+  try {
+    let id = localStorage.getItem(KEY);
+    if (!id) { id = Math.random().toString(36).slice(2, 12); localStorage.setItem(KEY, id); }
+    return id;
+  } catch { return ''; }
+}
 export interface Lobby {
   code: string;
   host: string;
@@ -68,7 +78,7 @@ export interface Lobby {
 
 /** Guest → host */
 export type GuestMsg =
-  | { t: 'hello'; name: string }
+  | { t: 'hello'; name: string; cid?: string }
   | { t: 'ping' }
   | { t: 'squad'; ids: string[] }
   | { t: 'pick'; team: TeamId }
@@ -80,14 +90,15 @@ export type GuestMsg =
 export type HostMsg =
   | { t: 'lobby'; lobby: Lobby }
   | { t: 'state'; state: GameState; now: number }
-  | { t: 'error'; text: string };
+  | { t: 'error'; text: string }
+  | { t: 'pong' };
 
 type Listener = () => void;
 
 // ---------------- host ----------------
 
 /** One connected guest, over either route. */
-interface Link { peer: string; label: string; via: 'direct' | 'relay'; send(msg: HostMsg): void; close(): void }
+interface Link { peer: string; label: string; cid?: string; via: 'direct' | 'relay'; send(msg: HostMsg): void; close(): void }
 
 export interface HostRoom {
   lobby: Lobby;
@@ -177,19 +188,39 @@ export async function createRoom(name: string, team: TeamId, settings: Lobby['se
 
   const receive = (link: Link, msg: GuestMsg) => {
     seen.set(link.peer, Date.now());
-    if (msg.t === 'ping') return;
-    if (msg.t === 'hello') { link.label = String(msg.name ?? '').slice(0, 20); link.send({ t: 'lobby', lobby: room.lobby }); return; }
+    if (msg.t === 'ping') { link.send({ t: 'pong' }); return; }
+    if (msg.t === 'hello') {
+      link.label = String(msg.name ?? '').slice(0, 20);
+      if (typeof msg.cid === 'string' && msg.cid) link.cid = msg.cid.slice(0, 24);
+      link.send({ t: 'lobby', lobby: room.lobby });
+      return;
+    }
     const seat = (Object.entries(room.lobby.seats) as [TeamId, Seat][]).find(([, s]) => s.peer === link.peer);
     if (msg.t === 'pick') {
       if (seat && seat[0] === msg.team) { room.sendLobby(); return; }
-      if (room.lobby.seats[msg.team]) { link.send({ t: 'error', text: 'That team was just taken. Pick another.' }); return; }
       const who = link.label || 'Friend';
+      const holder = room.lobby.seats[msg.team];
+      if (holder) {
+        // The same person coming back on a new connection (their old one went quiet): hand the seat over.
+        // Same device (or, without one, same name and the old link has gone quiet).
+        const quiet = Date.now() - (seen.get(holder.peer) ?? 0) > 4000 || !room.peers.has(holder.peer);
+        const sameDevice = Boolean(link.cid && holder.cid === link.cid);
+        if (holder.peer !== 'host' && !seat && (sameDevice || (holder.name === who && quiet))) {
+          const old = room.peers.get(holder.peer);
+          if (old) { room.peers.delete(holder.peer); seen.delete(holder.peer); old.close(); }
+          room.lobby.seats[msg.team] = { name: who, peer: link.peer, cid: link.cid };
+          room.sendLobby();
+          return;
+        }
+        link.send({ t: 'error', text: 'That team was just taken. Pick another.' });
+        return;
+      }
       if (room.lobby.started) {
         // Joining late: take over a bot's team. Only one team per person once the auction runs.
         if (seat) { link.send({ t: 'error', text: 'You already have a team in this auction.' }); return; }
         if (!room.onJoin?.(msg.team, who)) { link.send({ t: 'error', text: 'You can join once the host is back on the auction screen.' }); return; }
       } else if (seat) delete room.lobby.seats[seat[0]];
-      room.lobby.seats[msg.team] = { name: who, peer: link.peer };
+      room.lobby.seats[msg.team] = { name: who, peer: link.peer, cid: link.cid };
       room.sendLobby();
       return;
     }
@@ -210,13 +241,13 @@ export async function createRoom(name: string, team: TeamId, settings: Lobby['se
 
   // Route 2: the relay. Guests write to the host topic as { from, msg }.
   relay.subscribe(topicOf(code, 'host'), async data => {
-    const env = await unpack<{ from: string; msg: GuestMsg }>(data);
+    const env = await unpack<{ from: string; name?: string; msg: GuestMsg }>(data);
     if (!env || typeof env.from !== 'string' || !env.msg) return;
     let link = room.peers.get(env.from);
     if (!link || link.via !== 'relay') {
-      if (env.msg.t !== 'hello') return;
+      // New, or back after the host dropped them (phone asleep): either way, (re)admit them.
       const id = env.from;
-      link = { peer: id, label: '', via: 'relay', send: m => toGuests({ to: id, msg: m }), close: () => {} };
+      link = { peer: id, label: String(env.name ?? '').slice(0, 20), via: 'relay', send: m => toGuests({ to: id, msg: m }), close: () => {} };
       add(link);
     }
     receive(link, env.msg);
@@ -276,6 +307,7 @@ export function joinRoom(code: string, name: string): GuestRoom {
   let closed = false;
   let lastState = 0;
   const relayId = 'r' + Math.random().toString(36).slice(2, 12);
+  const cid = deviceId();
   /** My team, remembered so I can take it back after switching routes (my id changes). */
   let want: TeamId | null = null;
   const seatOf = (id: string) => room.lobby && (Object.entries(room.lobby.seats) as [TeamId, Seat][]).find(([, s]) => s.peer === id)?.[0];
@@ -284,24 +316,50 @@ export function joinRoom(code: string, name: string): GuestRoom {
     code, lobby: null, state: null, error: null, connected: false, via: 'direct', me: '', listeners: new Set(),
     send(msg) {
       if (room.via === 'direct') { if (conn?.open) conn.send(msg); }
-      else toHost?.({ from: relayId, msg });
+      else toHost?.({ from: relayId, name, msg });
     },
     close() {
       closed = true; clearTimeout(timer); clearInterval(ping); clearInterval(hello);
+      document.removeEventListener('visibilitychange', onShow);
       peer?.destroy(); relay?.close();
       if (guest === room) guest = null;
     },
   };
-  const ping = window.setInterval(() => { if (room.connected) room.send({ t: 'ping' }); }, 3000);
+  const ping = window.setInterval(() => {
+    if (!room.connected) return;
+    room.send({ t: 'ping' });
+    // No word from the host for 12 s (phone was asleep, link died quietly): reconnect and take my team back.
+    if (Date.now() - lastHost > 12000) recover();
+  }, 3000);
+  const recover = () => {
+    if (closed) return;
+    want = (room.me && seatOf(room.me)) || want;
+    lastHost = Date.now();
+    if (room.via === 'direct') { room.connected = false; useRelay(); }
+    else toHost?.({ from: relayId, name, msg: { t: 'hello', name, cid } satisfies GuestMsg });
+  };
+  const onShow = () => {
+    if (document.visibilityState !== 'visible' || !room.connected) return;
+    room.send({ t: 'ping' });
+    if (room.via === 'relay') toHost?.({ from: relayId, name, msg: { t: 'hello', name, cid } satisfies GuestMsg });
+  };
+  document.addEventListener('visibilitychange', onShow);
   let hello = 0;
   const changed = () => room.listeners.forEach(f => f());
   const fail = (text: string) => { clearTimeout(timer); room.connected = false; room.error = text; changed(); };
 
+  let lastHost = Date.now();
+  let lastPick = 0;
   const onHost = (msg: HostMsg) => {
+    lastHost = Date.now();
+    if (msg.t === 'pong') return;
     if (msg.t === 'lobby') {
       room.lobby = msg.lobby;
       if (want && seatOf(room.me) === want) want = null;
-      else if (want && !msg.lobby.seats[want]) room.send({ t: 'pick', team: want });
+      else if (want && (!msg.lobby.seats[want] || msg.lobby.seats[want]!.name === name) && Date.now() - lastPick > 2000) {
+        lastPick = Date.now();
+        room.send({ t: 'pick', team: want });
+      }
     }
     if (msg.t === 'error') room.error = msg.text;
     if (msg.t === 'state') {
@@ -337,7 +395,7 @@ export function joinRoom(code: string, name: string): GuestRoom {
       onHost(env.msg);
     });
     // Say hello until the host answers (the host may still be subscribing).
-    const sayHello = () => toHost?.({ from: relayId, msg: { t: 'hello', name } satisfies GuestMsg });
+    const sayHello = () => toHost?.({ from: relayId, name, msg: { t: 'hello', name, cid } satisfies GuestMsg });
     r.ready.then(() => { sayHello(); hello = window.setInterval(() => { if (!room.connected) sayHello(); else clearInterval(hello); }, 2000); }, () => {});
     clearTimeout(timer);
     timer = window.setTimeout(() => {
@@ -365,7 +423,7 @@ export function joinRoom(code: string, name: string): GuestRoom {
       room.me = id;
       const c = p.connect(PREFIX + code.toUpperCase(), { reliable: true });
       conn = c;
-      c.on('open', () => { if (conn !== c) return; c.send({ t: 'hello', name } satisfies GuestMsg); connectedNow(); });
+      c.on('open', () => { if (conn !== c) return; c.send({ t: 'hello', name, cid } satisfies GuestMsg); connectedNow(); });
       c.on('data', raw => { if (conn === c) onHost(raw as HostMsg); });
       c.on('close', () => {
         if (conn !== c || closed || room.via !== 'direct') return;

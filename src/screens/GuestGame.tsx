@@ -90,7 +90,7 @@ export default function GuestGame() {
           </p>
         </div>
         {room.error && <p className="status err" role="alert">{room.error}</p>}
-        {lobby && <SeatGrid seats={lobby.seats} mine={myTeam} late={late} onPick={late && myTeam ? undefined : t => room.send({ t: 'pick', team: t })} />}
+        {lobby && <SeatGrid seats={lobby.seats} mine={myTeam} late={late} myName={name.trim() || savedName()} myCid={(() => { try { return localStorage.getItem('ipl-auction-cid') ?? undefined; } catch { return undefined; } })()} onPick={late && myTeam ? undefined : t => room.send({ t: 'pick', team: t })} />}
         {room.error && (
           <div className="row" style={{ gap: 8 }}>
             <button type="button" className="btn primary" style={{ flex: 1 }} onClick={retry}>Try again</button>

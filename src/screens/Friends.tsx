@@ -168,19 +168,25 @@ export function HostLobby() {
 }
 
 /** Ten team tiles showing who has each team. Pass onPick to let a guest choose a free one. */
-export function SeatGrid({ seats, onPick, mine, late }: { seats: Partial<Record<TeamId, Seat>>; onPick?: (t: TeamId) => void; mine?: TeamId | null; late?: boolean }) {
+export function SeatGrid({ seats, onPick, mine, late, myName, myCid }: {
+  seats: Partial<Record<TeamId, Seat>>; onPick?: (t: TeamId) => void; mine?: TeamId | null; late?: boolean;
+  /** My name: a seat held under it (my old connection) can be taken back. */
+  myName?: string;
+  myCid?: string;
+}) {
   return (
     <div className="seat-grid">
       {TEAMS.map(t => {
         const s = seats[t.id];
         const free = !s;
+        const mineBefore = Boolean(s && s.peer !== 'host' && !mine && ((myCid && s.cid === myCid) || (myName && s.name === myName)));
         return (
-          <button key={t.id} type="button" className={`seat${free ? ' free' : ''}${mine === t.id ? ' mine' : ''}`} disabled={!onPick || (!free && mine !== t.id)}
+          <button key={t.id} type="button" className={`seat${free ? ' free' : ''}${mine === t.id ? ' mine' : ''}`} disabled={!onPick || (!free && mine !== t.id && !mineBefore)}
             onClick={() => onPick?.(t.id)} style={{ ['--team' as string]: t.color }}>
             <TeamLogo id={t.id} size={32} />
             <span className="seat-text">
               <b>{t.id}</b>
-              <span className="small muted">{s ? (s.peer === 'host' ? `${s.name} (host)` : s.name) : onPick ? (late ? 'Bot · tap to play' : 'Tap to pick') : 'Bot'}</span>
+              <span className="small muted">{s ? (s.peer === 'host' ? `${s.name} (host)` : mineBefore && onPick ? `${s.name} · tap to rejoin` : s.name) : onPick ? (late ? 'Bot · tap to play' : 'Tap to pick') : 'Bot'}</span>
             </span>
           </button>
         );
