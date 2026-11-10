@@ -54,6 +54,11 @@ npm run data                           # downloads Cricsheet + Wikidata into .ca
 npm run photos                         # optional: more openly licensed photos from Openverse
 ```
 
+`src/data/contracts.json` holds each player's real IPL price in lakhs (2026 retention or auction price, and the 2025 price),
+taken from Wikipedia's "List of 2025/2026 Indian Premier League personnel changes". Ratings use it as buzz:
+rating = IPL record and recent form, blended with the latest IPL season, pulled towards what franchises paid,
+plus a little for capped players and big names. Update it after each auction.
+
 Sources: Cricsheet ball-by-ball data (IPL, T20Is, ODIs, BBL, SA20, PSL, CPL, ILT20, MLC, The Hundred, BPL, T20 Blast),
 the Cricsheet people register, and Wikidata / Wikimedia Commons for names and free photos.
 

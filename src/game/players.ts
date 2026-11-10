@@ -1,4 +1,5 @@
 import raw from '../data/players.json';
+import contractsRaw from '../data/contracts.json';
 import type { TeamId } from '../data/teams';
 import { RULES } from './rules';
 
@@ -126,19 +127,43 @@ function ratingFromBase(base: number, key: string) {
   return r + (h % 9) - 4; // spread players of the same price a little
 }
 
+/** Real IPL contracts (Wikipedia, IPL 2025 and 2026 personnel changes): retention or auction price in lakhs. */
+interface Contract { p26?: number; how26?: 'retained' | 'auction'; p25?: number }
+const CONTRACTS = contractsRaw as Record<string, Contract>;
+
+/** Buzz: what franchises actually paid, turned back into a rating (the inverse of fairValue). */
+function ratingFromPrice(lakhs: number) {
+  const x = Math.pow(Math.max(0, lakhs / 100 - 0.3) / 17, 1 / 2.3);
+  return 45 + 50 * x;
+}
+
+/** Rating from the latest IPL season alone, or null when he barely played in it. */
+function lastSeason(p: RawPlayer, capped: boolean): number | null {
+  const s = (p.comps ?? []).filter(c => /^IPL 20\d\d$/.test(c.name)).sort((a, b) => b.name.localeCompare(a.name))[0];
+  return s && s.m >= 5 ? rate(p.role, s, s, capped) : null;
+}
+
 /**
- * Rating points for an uncapped player's breakout in the latest IPL season, up to +6:
- * runs at a big strike rate, or a pile of wickets. This is the season people talk about at the auction.
+ * Final rating from four things: IPL record (career and recent form), the latest IPL season,
+ * buzz (his current IPL price; a player released after 2025 counts his old price at a discount)
+ * and international standing (capped, a star or a legend).
  */
-function breakout(p: RawPlayer) {
-  const seasons = (p.comps ?? []).filter(c => /^IPL 20\d\d$/.test(c.name)).sort((a, b) => b.name.localeCompare(a.name));
-  const s = seasons[0];
-  if (!s || s.m < 5) return 0;
-  const sr = s.balls ? (s.runs / s.balls) * 100 : 0;
-  const bat = s.runs >= 120 && sr >= 140 ? Math.min(6, (s.runs / 100) * (sr / 150) * 1.6) : 0;
-  const econ = s.bb ? (s.rc / s.bb) * 6 : 99;
-  const bowl = s.wk >= 6 && econ <= 10 ? Math.min(6, s.wk * 0.4 * (10.5 - econ) / 2) : 0;
-  return Math.round(Math.max(bat, bowl));
+function finalRating(p: RawPlayer, record: number, capped: boolean, fromIPL: boolean) {
+  const season = fromIPL ? lastSeason(p, capped) : null;
+  let r = season === null ? record : 0.6 * record + 0.4 * season;
+  const k = CONTRACTS[p.id];
+  const price = k?.p26 ?? (k?.p25 ? k.p25 * 0.6 : null);
+  if (price) {
+    const buzz = ratingFromPrice(price);
+    // Big contracts say a lot; a base-price deal says little, and pulls a rating down only gently.
+    const w = price >= 1000 ? 0.5 : price >= 400 ? 0.4 : price >= 150 ? 0.3 : 0.15;
+    const weight = buzz < r ? w * 0.5 : w;
+    r = r * (1 - weight) + buzz * weight;
+  } else if (!p.team && p.career.m > 0) {
+    r -= 5; // played in the IPL before, but no deal in 2025 or 2026: little buzz in the room
+  }
+  const aura = (capped ? 1 : 0) + (LEGENDS.includes(p.name) ? 4 : STARS.includes(p.name) ? 2 : 0);
+  return clamp(Math.round(r + aura), 35, 97);
 }
 
 function build(): Player[] {
@@ -150,7 +175,7 @@ function build(): Player[] {
     const c = useT20I ? p.t20i! : useLeague ? p.league! : p.career;
     const statsFrom = useT20I ? 'T20I' as const : useLeague ? 'League' as const : p.career.m > 0 ? 'IPL' as const : null;
     let rating = statsFrom === null ? ratingFromBase(p.auction?.base ?? 30, p.id)
-      : useT20I ? rate(p.role, c, c, capped) - 3
+      : useT20I ? Math.min(84, rate(p.role, c, c, capped) - 6)   // internationals for most teams are a step below the IPL
       : useLeague ? Math.min(78, rate(p.role, c, c, capped) - 10)   // franchise leagues are a clear step below the IPL
       : rate(p.role, c, p.recent, capped);
     // Thin record: lean on the official base price too.
@@ -159,8 +184,7 @@ function build(): Player[] {
       const blend = Math.round((rating + ratingFromBase(p.auction.base, p.id)) / 2);
       rating = capped ? blend : Math.max(rating, blend);
     }
-    // The buzz around an uncapped breakout season in the latest IPL.
-    if (!capped && statsFrom === 'IPL') rating = Math.min(88, rating + breakout(p));
+    rating = finalRating(p, rating, capped, statsFrom === 'IPL');
     return {
       id: p.id, name: p.name, role: p.role, country: p.country, overseas: p.overseas,
       capped, lastTeam: p.team, img: p.img, imgCredit: p.imgCredit, statsFrom,
