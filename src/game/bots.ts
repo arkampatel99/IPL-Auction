@@ -57,6 +57,22 @@ function loyalty(s: GameState, team: TeamId, p: Player) {
   };
 }
 
+/** Money a team can spend per slot it still wants to fill. */
+function perSlotOf(t: TeamState) {
+  return Math.max(0, t.purse - reserveNeeded(t)) / Math.max(1, BOT_SQUAD - t.squad.length);
+}
+
+/**
+ * 0.6 to 1.4: how this team's money per open slot compares with the rest of the room.
+ * Twice the average is 1.4, the average is 1, half of it is 0.8, broke is 0.6.
+ */
+export function wallet(s: GameState, team: TeamId) {
+  const ids = TEAM_IDS.filter(id => !s.teams[id].out && s.teams[id].squad.length < RULES.squadMax);
+  const avg = ids.reduce((a, id) => a + perSlotOf(s.teams[id]), 0) / Math.max(1, ids.length);
+  if (avg <= 0) return 1;
+  return Math.max(0.6, Math.min(1.4, 0.6 + 0.4 * (perSlotOf(s.teams[team]) / avg)));
+}
+
 export function botMaxBid(s: GameState, team: TeamId, p: Player): number {
   const t = s.teams[team];
   const cfg = LEVEL[s.settings.level];
@@ -78,6 +94,8 @@ export function botMaxBid(s: GameState, team: TeamId, p: Player): number {
 
   const spendable = t.purse - reserveNeeded(t);
   const perSlot = spendable / Math.max(1, BOT_SQUAD - t.squad.length);
+  // Money per open slot against the other teams: a team flush with cash chases harder, a stretched one holds back.
+  max *= wallet(s, team);
   const cap = perSlot * (p.rating >= 85 ? cfg.marqueeCap : cfg.slotCap);
   max = Math.min(max, cap, spendable);
   // A new face is a gamble: never more than twice his base price.
