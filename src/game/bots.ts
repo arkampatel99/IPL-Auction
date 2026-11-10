@@ -71,6 +71,8 @@ export function botMaxBid(s: GameState, team: TeamId, p: Player): number {
   let max = p.value * n * (1 + cfg.noise * (2 * hash01(key) - 1));
   max *= 1 + loyalty(s, team, p).bonus;
   max *= experienceFactor(p);
+  // Easy bots hunt bargains: they rarely pay far above a player's base price.
+  if (s.settings.level === 'easy') max = Math.min(max * 0.7, p.base * (p.rating >= 80 ? 6 : p.rating >= 70 ? 3.5 : 2));
   // Mini auctions: few slots and big purses chase the few quality players, so prices run hot.
   if (s.settings.mode === 'mini') max *= p.rating >= 80 ? 2.6 : p.rating >= 72 ? 1.8 : p.rating >= 64 ? 1.25 : 1;
 
@@ -118,7 +120,7 @@ export function interested(s: GameState, team: TeamId, p: Player): boolean {
   // Once a team has a core, it ignores clearly weaker players.
   const top = t.squad.map(e => playerById[e.id].rating).sort((a, b) => b - a).slice(0, 11);
   if (top.length >= 11 && p.rating < top.reduce((a, b) => a + b, 0) / 11 - 12) pr *= 0.4;
-  if (level === 'easy') pr = 0.25 + pr * 0.5;           // patchy: interest is half random
+  if (level === 'easy') pr *= 0.55;                      // casual: chases fewer players, leaves plenty unsold
   if (level === 'hard' && gap <= 0) pr *= 0.6;          // disciplined: leaves what it doesn't need
   // Teams back proven IPL players. Unknown domestic names mostly go unsold unless a team needs bodies.
   const experience = p.statsFrom === 'IPL' ? (p.stats.matches >= 10 ? 1 : 0.7) : p.statsFrom === 'T20I' ? 0.6 : p.statsFrom === 'League' ? 0.5 : 0.18;
