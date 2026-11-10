@@ -1,6 +1,7 @@
 import { teamById, type TeamId } from '../data/teams';
 import type { GameState } from '../game/engine';
 import { TeamLogo, money } from '../ui/common';
+import { personName } from '../net/room';
 
 export type CallKind = 'intro' | 'bid' | 'call' | 'result';
 export interface Call {
@@ -35,17 +36,17 @@ export default function AuctioneerStage({ state, call, compact }: { state: GameS
   let bubble: React.ReactNode;
   if (sc.mode === 'result' && call) {
     bubble = call.sold && call.team
-      ? <div className="bubble-sold"><span className="bubble-big">SOLD!</span><TeamCall team={call.team} amount={call.amount!} /></div>
+      ? <div className="bubble-sold"><span className="bubble-big">SOLD!</span><TeamCall team={call.team} amount={call.amount!} who={personName(state, call.team)} /></div>
       : <span className="bubble-big">Unsold</span>;
   } else if (sc.mode === 'once' || sc.mode === 'twice') {
     bubble = (
       <div className="bubble-going">
         <span className="bubble-big">{sc.mode === 'once' ? 'Going once…' : 'Going twice…'}</span>
-        {lot?.leader && <TeamCall team={lot.leader} amount={lot.bid!} small />}
+        {lot?.leader && <TeamCall team={lot.leader} amount={lot.bid!} who={personName(state, lot.leader)} small />}
       </div>
     );
   } else if (sc.mode === 'bid' && call?.team) {
-    bubble = <TeamCall team={call.team} amount={call.amount!} />;
+    bubble = <TeamCall team={call.team} amount={call.amount!} who={personName(state, call.team)} />;
   } else {
     bubble = <span className="bubble-text">{call?.text ?? 'Welcome to the auction.'}</span>;
   }
@@ -68,11 +69,11 @@ export default function AuctioneerStage({ state, call, compact }: { state: GameS
   );
 }
 
-function TeamCall({ team, amount, small }: { team: TeamId; amount: number; small?: boolean }) {
+function TeamCall({ team, amount, small, who }: { team: TeamId; amount: number; small?: boolean; who?: string | null }) {
   return (
     <span className={`team-call${small ? ' small' : ''}`}>
       <TeamLogo id={team} size={small ? 22 : 30} />
-      <span className="team-call-city">{teamById[team].city}</span>
+      <span className="team-call-city">{who ? `${who} · ${team}` : teamById[team].city}</span>
       <span className="team-call-amount num">{money(amount)}</span>
     </span>
   );

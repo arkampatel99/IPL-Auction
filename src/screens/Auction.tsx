@@ -19,7 +19,7 @@ import AuctioneerStage, { type Call } from './AuctioneerStage';
 import { isAdmin } from '../ui/admin';
 import { getColorPref, setColorPref } from '../ui/theme';
 import type { Act } from './Game';
-import { guestRoom, hostRoom, inviteLink } from '../net/room';
+import { guestRoom, hostRoom, inviteLink, personName } from '../net/room';
 
 /** `guest`: a friend following the host's auction (no pause, actions go to the host). */
 export default function Auction({ state, act, guest }: { state: GameState; act: Act; guest?: boolean }) {
@@ -91,7 +91,7 @@ export default function Auction({ state, act, guest }: { state: GameState; act: 
               </button>
               {isAdmin && <button type="button" role="menuitem" onClick={() => { act((s, now) => setPaused(s, true, now)); nav('/songs'); }}>Team songs</button>}
               {isAdmin && <button type="button" role="menuitem" onClick={() => { act((s, now) => setPaused(s, true, now)); nav('/photos'); }}>Player photos</button>}
-              {state.settings.names && <RoomMenu state={state} guest={guest} />}
+              {(state.settings.names || (state.settings.humans?.length ?? 0) > 1 || hostRoom() || guest) && <RoomMenu state={state} guest={guest} />}
               <hr />
               <button type="button" role="menuitem" onClick={() => { act((s, now) => setPaused(s, true, now)); nav('/'); }}>
                 Exit to home <span className="small muted">· your game is saved</span>
@@ -364,8 +364,14 @@ function useOutbid(s: GameState): TeamId | null {
 
 function Teams({ state, ratings, onOpen }: { state: GameState; ratings: Ratings; onOpen: (t: TeamId) => void }) {
   const leader = state.lot?.leader;
+  // Phones show two chips: yours, then whoever leads the bid. Scroll back so both are in view.
+  const strip = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = strip.current;
+    if (el && el.scrollWidth > el.clientWidth && el.scrollLeft > 0) el.scrollTo({ left: 0, behavior: 'smooth' });
+  }, [leader, state.lot?.playerId]);
   return (
-    <div className="team-strip">
+    <div className="team-strip" ref={strip}>
       {TEAM_IDS.map(id => {
         const t = state.teams[id];
         const r = ratings[id];
@@ -663,7 +669,7 @@ function BidPanel({ state, act, outbidBy, call, rating, multi }: {
   return (
     <div className={`bidpanel${mine ? ' mine' : ''}`}>
       {mine && <div className="banner win">You have the highest bid</div>}
-      {!mine && outbidBy && lot.leader && <div className="banner lose">Outbid by {teamById[lot.leader].name}</div>}
+      {!mine && outbidBy && lot.leader && <div className="banner lose">Outbid by {state.teams[lot.leader].human ? `${personName(state, lot.leader)} (${lot.leader})` : teamById[lot.leader].name}</div>}
       <div className="row between">
         <div>
           <div className="small muted">{lot.bid === null ? 'Opening bid' : mine ? 'Your bid' : 'Current bid'}</div>
@@ -674,7 +680,7 @@ function BidPanel({ state, act, outbidBy, call, rating, multi }: {
             <>
               <div style={{ textAlign: 'right' }}>
                 <div className="small muted">{mine ? 'Leading' : 'Highest bidder'}</div>
-                <b>{mine ? 'You' : teamById[lot.leader].city}</b>
+                <b>{mine ? 'You' : state.teams[lot.leader].human ? `${personName(state, lot.leader)} · ${lot.leader}` : teamById[lot.leader].city}</b>
               </div>
               <TeamLogo id={lot.leader} size={44} />
             </>
@@ -713,8 +719,8 @@ function BidPanel({ state, act, outbidBy, call, rating, multi }: {
 function chipLabel(state: GameState, id: TeamId) {
   if (id === state.settings.team) return `${id} · You`;
   const t = state.teams[id];
-  if (t.human) return `${id} · ${state.settings.names?.[id] ?? 'Friend'}`;
-  return state.settings.names ? `${id} · Bot` : id;
+  if (t.human) return `${id} · ${personName(state, id)}`;
+  return state.settings.names || (state.settings.humans?.length ?? 0) > 1 ? `${id} · Bot` : id;
 }
 
 /** Friends room part of the menu: who is playing, and (for the host) an invite link for late joiners. */
@@ -735,7 +741,7 @@ function RoomMenu({ state, guest }: { state: GameState; guest?: boolean }) {
         <div className="small muted">Playing in this room</div>
         <ul>
           {people.map(id => (
-            <li key={id}><TeamLogo id={id} size={20} /><b>{id}</b><span>{id === state.settings.team ? 'You' : state.settings.names?.[id] ?? 'Friend'}</span></li>
+            <li key={id}><TeamLogo id={id} size={20} /><b>{id}</b><span>{id === state.settings.team ? 'You' : personName(state, id)}</span></li>
           ))}
         </ul>
         <div className="small muted">{bots} {bots === 1 ? 'team is a bot' : 'teams are bots'}. Friends can still join and take one.</div>

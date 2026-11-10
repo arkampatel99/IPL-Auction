@@ -4,6 +4,7 @@ import { RULES } from '../game/rules';
 import { playerById, roleLabel } from '../game/players';
 import { retainable, retentionError, retentionPlan, squadsPending, type GameState } from '../game/engine';
 import { PlayerPhoto, TeamLogo, TeamTag, TopBar, money } from '../ui/common';
+import { personName } from '../net/room';
 
 /** Props shared by the retention (mega) and release (mini) screens, for the host and for friends. */
 export interface SquadStepProps {
@@ -31,7 +32,7 @@ export function SquadWaiting({ state, startAnyway }: Pick<SquadStepProps, 'state
           {pending.map(id => (
             <div key={id} className="list-row">
               <TeamLogo id={id} size={28} />
-              <div className="grow"><b>{id}</b> <span className="muted">· {state.settings.names?.[id] ?? 'Friend'}</span></div>
+              <div className="grow"><b>{id}</b> <span className="muted">· {personName(state, id)}</span></div>
               <span className="small muted">Still choosing</span>
             </div>
           ))}
@@ -113,7 +114,7 @@ export default function Retention({ state, confirm: send, startAnyway, guest }: 
                 <TeamLogo id={id} size={28} />
                 <div className="grow small">
                   {state.teams[id].human && !state.ready?.includes(id)
-                    ? <span className="muted">{state.settings.names?.[id] ?? 'Friend'} is choosing…</span>
+                    ? <span className="muted">{personName(state, id)} is choosing…</span>
                     : state.teams[id].squad.map(e => playerById[e.id].name).join(', ') || <span className="muted">Nobody</span>}
                 </div>
                 <span className="small muted num">{money(state.teams[id].purse)}</span>

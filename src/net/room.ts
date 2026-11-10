@@ -380,3 +380,16 @@ export function joinRoom(code: string, name: string): GuestRoom {
   guest = room;
   return room;
 }
+
+/**
+ * The person playing a team in a friends room, or null for a bot. Uses the names saved in the game,
+ * then the live room's seats (games started before names were saved still show them).
+ */
+export function personName(state: GameState, team: TeamId): string | null {
+  if (!state.teams[team]?.human) return null;
+  const saved = state.settings.names?.[team];
+  if (saved) return saved;
+  const seats = host?.lobby.seats ?? guest?.lobby?.seats;
+  const seat = seats?.[team];
+  return seat?.name ?? 'Friend';
+}
