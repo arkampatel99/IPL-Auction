@@ -49,6 +49,25 @@ function useHostRoom(state: ReturnType<typeof useGame>['state'], act: Act) {
       if (msg.t === 'rtm' && o.stage !== 'raise' && o.holder === team) rtmAnswer(s, msg.yes, now);
       if (msg.t === 'raise' && o.stage === 'raise' && o.buyer === team) rtmRaise(s, msg.amount, now);
     });
-    return () => { room.onAction = undefined; };
+    // Late joiner takes a bot's team; a friend who leaves hands theirs back to a bot.
+    room.onJoin = (team, name) => {
+      const s = latest.current;
+      if (!s || s.phase === 'done' || s.teams[team].human) return false;
+      act(st => {
+        st.teams[team].human = true;
+        st.settings.humans = [...new Set([...(st.settings.humans ?? [st.settings.team]), team])];
+        st.settings.names = { ...st.settings.names, [team]: name };
+      });
+      return true;
+    };
+    room.onLeave = team => act(st => {
+      if (team === st.settings.team) return;
+      st.teams[team].human = false;
+      st.settings.humans = (st.settings.humans ?? []).filter(t => t !== team);
+      const names = { ...st.settings.names };
+      delete names[team];
+      st.settings.names = names;
+    });
+    return () => { room.onAction = undefined; room.onJoin = undefined; room.onLeave = undefined; };
   }, [act]);
 }

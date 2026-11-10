@@ -27,6 +27,8 @@ export interface Settings {
   mode: AuctionMode; level: BotLevel; team: TeamId; timer: number; length: 'quick' | 'full'; seed: number;
   /** Friends room: every team played by a person (the host's own team included). */
   humans?: TeamId[];
+  /** Friends room: the name of the person playing each team. */
+  names?: Partial<Record<TeamId, string>>;
 }
 export interface GameState {
   v: 2;

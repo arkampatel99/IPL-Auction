@@ -19,6 +19,7 @@ import AuctioneerStage, { type Call } from './AuctioneerStage';
 import { isAdmin } from '../ui/admin';
 import { getColorPref, setColorPref } from '../ui/theme';
 import type { Act } from './Game';
+import { guestRoom, hostRoom, inviteLink } from '../net/room';
 
 /** `guest`: a friend following the host's auction (no pause, actions go to the host). */
 export default function Auction({ state, act, guest }: { state: GameState; act: Act; guest?: boolean }) {
@@ -90,6 +91,7 @@ export default function Auction({ state, act, guest }: { state: GameState; act: 
               </button>
               {isAdmin && <button type="button" role="menuitem" onClick={() => { act((s, now) => setPaused(s, true, now)); nav('/songs'); }}>Team songs</button>}
               {isAdmin && <button type="button" role="menuitem" onClick={() => { act((s, now) => setPaused(s, true, now)); nav('/photos'); }}>Player photos</button>}
+              {state.settings.names && <RoomMenu state={state} guest={guest} />}
               <hr />
               <button type="button" role="menuitem" onClick={() => { act((s, now) => setPaused(s, true, now)); nav('/'); }}>
                 Exit to home <span className="small muted">· your game is saved</span>
@@ -373,7 +375,7 @@ function Teams({ state, ratings, onOpen }: { state: GameState; ratings: Ratings;
             onClick={() => onOpen(id)} aria-label={`${teamById[id].name}: view squad`}>
             <TeamLogo id={id} size={32} />
             <span className="chip-text">
-              <span className="chip-code">{id === state.settings.team ? `${id} · You` : t.human ? `${id} · Friend` : id}</span>
+              <span className="chip-code">{chipLabel(state, id)}</span>
               <span className="line num">{money(t.purse)} · {t.squad.length}/{RULES.squadMax} · {overseasCount(t)} OS</span>
               <span className="purse-bar" aria-hidden><i style={{ width: `${Math.round(100 * t.purse / startPurse(state, id))}%` }} /></span>
             </span>
@@ -707,6 +709,46 @@ function BidPanel({ state, act, outbidBy, call, rating, multi }: {
 }
 
 /** Phones: one slim line naming the next player. */
+/** "CSK · You", "MI · Rahul", or "RCB · Bot" in a friends room. */
+function chipLabel(state: GameState, id: TeamId) {
+  if (id === state.settings.team) return `${id} · You`;
+  const t = state.teams[id];
+  if (t.human) return `${id} · ${state.settings.names?.[id] ?? 'Friend'}`;
+  return state.settings.names ? `${id} · Bot` : id;
+}
+
+/** Friends room part of the menu: who is playing, and (for the host) an invite link for late joiners. */
+function RoomMenu({ state, guest }: { state: GameState; guest?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const code = guest ? guestRoom()?.code : hostRoom()?.lobby.code;
+  const people = TEAM_IDS.filter(id => state.teams[id].human);
+  const bots = TEAM_IDS.length - people.length;
+  const copy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!code) return;
+    try { await navigator.clipboard.writeText(inviteLink(code)); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* clipboard blocked */ }
+  };
+  return (
+    <>
+      <hr />
+      <div className="menu-room" onClick={e => e.stopPropagation()}>
+        <div className="small muted">Playing in this room</div>
+        <ul>
+          {people.map(id => (
+            <li key={id}><TeamLogo id={id} size={20} /><b>{id}</b><span>{id === state.settings.team ? 'You' : state.settings.names?.[id] ?? 'Friend'}</span></li>
+          ))}
+        </ul>
+        <div className="small muted">{bots} {bots === 1 ? 'team is a bot' : 'teams are bots'}. Friends can still join and take one.</div>
+      </div>
+      {code && (
+        <button type="button" role="menuitem" onClick={copy}>
+          {copied ? 'Invite link copied' : `Copy invite link · ${code}`}
+        </button>
+      )}
+    </>
+  );
+}
+
 function NextLine({ state }: { state: GameState }) {
   const id = state.queue.slice(state.qi + 1).find(x => !state.results[x]);
   if (!id) return null;

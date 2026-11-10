@@ -68,23 +68,30 @@ export default function GuestGame() {
     return <Auction state={view} act={act} guest />;
   }
 
-  // 3. Lobby: pick a free team, wait for the host to start.
+  // 3. Lobby: pick a free team and wait for the host, or join a running auction by taking a bot's team.
   const lobby = room.lobby;
+  const late = Boolean(lobby?.started);
+  const retry = () => { room.close(); setRoom(joinRoom(code, name.trim() || savedName() || 'Friend')); };
   return (
     <>
       <TopBar back="/friends" />
       <main className="page stack">
         <div className="hero">
-          <h1>{lobby ? `${lobby.host}'s room` : 'Connecting…'}</h1>
+          <h1>{lobby ? `${lobby.host}'s room` : room.error ? 'Not connected' : 'Connecting…'}</h1>
           <p className="muted">
-            {!lobby ? `Joining room ${code.toUpperCase()}…`
-              : lobby.started ? 'The auction is starting…'
+            {!lobby ? (room.error ? `Room ${code.toUpperCase()}` : `Joining room ${code.toUpperCase()}${room.attempt > 1 ? ` · try ${room.attempt} of 3` : ''}…`)
+              : late ? (myTeam ? `You're ${teamById[myTeam].name}. Joining the auction…` : 'The auction is on. Pick a bot team to take it over from here.')
               : myTeam ? `You're ${teamById[myTeam].name}. Waiting for the host to start.` : 'Pick a free team.'}
           </p>
         </div>
         {room.error && <p className="status err" role="alert">{room.error}</p>}
-        {lobby && <SeatGrid seats={lobby.seats} mine={myTeam} onPick={lobby.started ? undefined : t => room.send({ t: 'pick', team: t })} />}
-        {room.error && <button type="button" className="btn block" onClick={() => { room.close(); nav('/friends'); }}>Back</button>}
+        {lobby && <SeatGrid seats={lobby.seats} mine={myTeam} late={late} onPick={late && myTeam ? undefined : t => room.send({ t: 'pick', team: t })} />}
+        {room.error && (
+          <div className="row" style={{ gap: 8 }}>
+            <button type="button" className="btn primary" style={{ flex: 1 }} onClick={retry}>Try again</button>
+            <button type="button" className="btn" style={{ flex: 1 }} onClick={() => { room.close(); nav('/friends'); }}>Back</button>
+          </div>
+        )}
       </main>
     </>
   );

@@ -27,7 +27,7 @@ export default function TeamSheet({ state, team, onClose }: { state: GameState; 
           <TeamLogo id={team} size={56} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <h2>{info.name}</h2>
-            <div className="small muted">{team === state.settings.team ? 'You' : t.human ? 'Friend' : `Bot · ${state.settings.level}`}{t.squad.length >= 11 ? ` · Squad rating ${squadReport(t, { live: true }).overall}` : ''}</div>
+            <div className="small muted">{team === state.settings.team ? 'You' : t.human ? (state.settings.names?.[team] ?? 'Friend') : `Bot · ${state.settings.level}`}{t.squad.length >= 11 ? ` · Squad rating ${squadReport(t, { live: true }).overall}` : ''}</div>
           </div>
           <button type="button" className="btn sm ghost" onClick={onClose} aria-label="Close"><CloseIcon /></button>
         </div>

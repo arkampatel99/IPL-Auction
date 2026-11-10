@@ -135,7 +135,8 @@ export function HostLobby() {
   const copy = async () => { try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* clipboard blocked */ } };
   const start = () => {
     const humans = Object.keys(seats) as TeamId[];
-    saveGame(createGame({ ...room.lobby.settings, team: hostTeam, humans, seed: Math.floor(Math.random() * 2 ** 31) }));
+    const names = Object.fromEntries(Object.entries(seats).map(([t, s]) => [t, s!.name]));
+    saveGame(createGame({ ...room.lobby.settings, team: hostTeam, humans, names, seed: Math.floor(Math.random() * 2 ** 31) }));
     room.lobby.started = true;
     room.sendLobby();
     nav('/game');
@@ -167,7 +168,7 @@ export function HostLobby() {
 }
 
 /** Ten team tiles showing who has each team. Pass onPick to let a guest choose a free one. */
-export function SeatGrid({ seats, onPick, mine }: { seats: Partial<Record<TeamId, Seat>>; onPick?: (t: TeamId) => void; mine?: TeamId | null }) {
+export function SeatGrid({ seats, onPick, mine, late }: { seats: Partial<Record<TeamId, Seat>>; onPick?: (t: TeamId) => void; mine?: TeamId | null; late?: boolean }) {
   return (
     <div className="seat-grid">
       {TEAMS.map(t => {
@@ -179,7 +180,7 @@ export function SeatGrid({ seats, onPick, mine }: { seats: Partial<Record<TeamId
             <TeamLogo id={t.id} size={32} />
             <span className="seat-text">
               <b>{t.id}</b>
-              <span className="small muted">{s ? (s.peer === 'host' ? `${s.name} (host)` : s.name) : onPick ? 'Tap to pick' : 'Bot'}</span>
+              <span className="small muted">{s ? (s.peer === 'host' ? `${s.name} (host)` : s.name) : onPick ? (late ? 'Bot · tap to play' : 'Tap to pick') : 'Bot'}</span>
             </span>
           </button>
         );

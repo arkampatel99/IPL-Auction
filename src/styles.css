@@ -1307,3 +1307,10 @@ main.page { overflow-x: hidden; overflow-x: clip; }
   .app-shell:has(.bidbar-wrap .bidpanel) > main.auction { padding-bottom: calc(var(--bidbar-h, 260px) + 12px); }
   .dialog.sheet { max-height: calc(100dvh - 32px); }
 }
+
+/* Friends room: who is playing, inside the auction menu */
+.menu-room { padding: 8px 12px; display: grid; gap: 6px; max-width: 300px; }
+.menu-room ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.menu-room li { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.menu-room li b { width: 40px; }
+.menu-room li span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
