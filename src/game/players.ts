@@ -68,14 +68,14 @@ export const starLabel = (star: number) => (star >= 80 ? 'Legend' : star >= 60 ?
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 
 function batScore(s: RawStats) {
-  if (s.inn < 3 || s.balls < 30) return 30;
+  if (s.inn < 3 || s.balls < 30) return 45; // too little to judge: just below average
   const perInn = s.runs / s.inn;
   const sr = (s.runs / s.balls) * 100;
   return clamp(28 + perInn * (sr / 130) * 1.55, 0, 99);
 }
 
 function bowlScore(s: RawStats) {
-  if (s.bb < 60) return 30;
+  if (s.bb < 60) return 45;
   const perMatch = s.wk / Math.max(1, s.bb / 24); // wickets per 4 overs
   const econ = (s.rc / s.bb) * 6;
   return clamp(30 + (perMatch * 20 + (9.6 - econ) * 8) * 1.45, 0, 99);
@@ -91,8 +91,11 @@ function roleScore(role: Role, s: RawStats) {
 /** Rating 0–100: recent form weighted over career, pulled to the middle for small samples. */
 export function rate(role: Role, career: RawStats, recent: RawStats, capped: boolean) {
   const raw = recent.m >= 6 ? 0.65 * roleScore(role, recent) + 0.35 * roleScore(role, career) : roleScore(role, career);
-  const shrink = career.m / (career.m + 10);
-  return clamp(Math.round(50 + (raw - 50) * shrink + (capped ? 3 : 0)), 35, 97);
+  // Uncapped players are judged on IPL numbers alone, so a short good run counts for more and the
+  // middle they're pulled to is a little higher: a franchise already picked them over hundreds of others.
+  const shrink = career.m / (career.m + (capped ? 10 : 8));
+  const prior = capped ? 50 : 54;
+  return clamp(Math.round(prior + (raw - prior) * shrink + (capped ? 3 : 0)), 35, 97);
 }
 
 /** Fair price in lakhs from rating: ~base at 50, ~₹6 Cr at 75, ₹14 Cr+ at 90. */
@@ -117,27 +120,50 @@ export function snapBase(lakhs: number): number {
 
 /** Rating for players with no record, from the official base price (the BCCI's own grading). */
 function ratingFromBase(base: number, key: string) {
-  const r = base >= 200 ? 78 : base >= 150 ? 74 : base >= 125 ? 72 : base >= 100 ? 69 : base >= 75 ? 64 : base >= 50 ? 58 : base >= 40 ? 55 : 49;
+  const r = base >= 200 ? 78 : base >= 150 ? 74 : base >= 125 ? 72 : base >= 100 ? 69 : base >= 75 ? 64 : base >= 50 ? 58 : base >= 40 ? 55 : 52;
   let h = 0;
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
   return r + (h % 9) - 4; // spread players of the same price a little
 }
 
+/**
+ * Rating points for an uncapped player's breakout in the latest IPL season, up to +6:
+ * runs at a big strike rate, or a pile of wickets. This is the season people talk about at the auction.
+ */
+function breakout(p: RawPlayer) {
+  const seasons = (p.comps ?? []).filter(c => /^IPL 20\d\d$/.test(c.name)).sort((a, b) => b.name.localeCompare(a.name));
+  const s = seasons[0];
+  if (!s || s.m < 5) return 0;
+  const sr = s.balls ? (s.runs / s.balls) * 100 : 0;
+  const bat = s.runs >= 120 && sr >= 140 ? Math.min(6, (s.runs / 100) * (sr / 150) * 1.6) : 0;
+  const econ = s.bb ? (s.rc / s.bb) * 6 : 99;
+  const bowl = s.wk >= 6 && econ <= 10 ? Math.min(6, s.wk * 0.4 * (10.5 - econ) / 2) : 0;
+  return Math.round(Math.max(bat, bowl));
+}
+
 function build(): Player[] {
   const list: Player[] = (raw as RawPlayer[]).map(p => {
+    // Cricsheet has no Afghanistan internationals, so its capped players look uncapped in the data.
+    const capped = p.capped || p.country === 'Afghanistan';
     const useT20I = p.career.m < 8 && p.t20i;
     const useLeague = !useT20I && p.career.m < 8 && p.league;
     const c = useT20I ? p.t20i! : useLeague ? p.league! : p.career;
     const statsFrom = useT20I ? 'T20I' as const : useLeague ? 'League' as const : p.career.m > 0 ? 'IPL' as const : null;
     let rating = statsFrom === null ? ratingFromBase(p.auction?.base ?? 30, p.id)
-      : useT20I ? rate(p.role, c, c, p.capped) - 3
-      : useLeague ? Math.min(78, rate(p.role, c, c, p.capped) - 10)   // franchise leagues are a clear step below the IPL
-      : rate(p.role, c, p.recent, p.capped);
+      : useT20I ? rate(p.role, c, c, capped) - 3
+      : useLeague ? Math.min(78, rate(p.role, c, c, capped) - 10)   // franchise leagues are a clear step below the IPL
+      : rate(p.role, c, p.recent, capped);
     // Thin record: lean on the official base price too.
-    if (p.auction && c.m < 15) rating = Math.round((rating + ratingFromBase(p.auction.base, p.id)) / 2);
+    // Uncapped players nearly all start at the minimum base, so the price only ever lifts them, never drags them down.
+    if (p.auction && c.m < 15) {
+      const blend = Math.round((rating + ratingFromBase(p.auction.base, p.id)) / 2);
+      rating = capped ? blend : Math.max(rating, blend);
+    }
+    // The buzz around an uncapped breakout season in the latest IPL.
+    if (!capped && statsFrom === 'IPL') rating = Math.min(88, rating + breakout(p));
     return {
       id: p.id, name: p.name, role: p.role, country: p.country, overseas: p.overseas,
-      capped: p.capped, lastTeam: p.team, img: p.img, imgCredit: p.imgCredit, statsFrom,
+      capped, lastTeam: p.team, img: p.img, imgCredit: p.imgCredit, statsFrom,
       comps: (p.comps ?? []).map(c => ({
         name: c.name, m: c.m, runs: c.runs, wickets: c.wk,
         sr: c.balls ? round1((c.runs / c.balls) * 100) : 0,
@@ -151,7 +177,7 @@ function build(): Player[] {
         wickets: c.wk,
         econ: c.bb ? round1((c.rc / c.bb) * 6) : 0,
       },
-      rating, star: starPower(p.name, p.career.m, rating, p.capped), value: 0, base: snapBase(p.auction?.base ?? (useLeague ? Math.min(100, basePrice(rating)) : basePrice(rating))), bowlType: p.bowlType, set: '', setName: '', setOrder: 0,
+      rating, star: starPower(p.name, p.career.m, rating, capped), value: 0, base: snapBase(p.auction?.base ?? (useLeague ? Math.min(100, basePrice(rating)) : basePrice(rating))), bowlType: p.bowlType, set: '', setName: '', setOrder: 0,
     };
   });
 
