@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { teamById, type TeamId } from '../data/teams';
 import type { GameState } from '../game/engine';
 import { TopBar } from '../ui/common';
@@ -20,9 +20,13 @@ export default function GuestGame() {
   const { code = '' } = useParams();
   const nav = useNavigate();
   const [name, setName] = useState(savedName());
+  const location = useLocation();
   const [room, setRoom] = useState<GuestRoom | null>(() => {
     const r = guestRoom();
-    return r && r.code === code.toUpperCase() ? r : null;
+    if (r && r.code === code.toUpperCase()) return r;
+    // Came from "Join a room" with a name already typed: connect straight away.
+    const typed = (location.state as { join?: string } | null)?.join?.trim();
+    return typed ? joinRoom(code, typed) : null;
   });
   const [, setV] = useState(0);
   useEffect(() => {

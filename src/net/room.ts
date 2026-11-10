@@ -57,7 +57,17 @@ function keepAlive(peer: Peer) {
 export const newCode = () => Array.from({ length: 6 }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join('');
 export const inviteLink = (code: string) => `${window.location.origin}/r/${code}`;
 
-export interface Seat { name: string; peer: string | 'host'; /** this device, so a returning friend gets their seat back */ cid?: string }
+export interface Seat {
+  name: string;
+  peer: string | 'host';
+  /** This device, so a returning friend gets their seat back. */
+  cid?: string;
+  /** Set while the friend is unreachable (phone locked, app switched). The seat is kept for a while. */
+  away?: number;
+}
+
+/** How long an unreachable friend keeps their seat before a bot (or someone else) takes the team. */
+export const AWAY_KEEP_MS = 60000;
 
 /** A random id kept on this device, so the host can recognise a friend who reconnects. */
 function deviceId(): string {
@@ -163,6 +173,15 @@ export async function createRoom(name: string, team: TeamId, settings: Lobby['se
   const sweep = window.setInterval(() => {
     const now = Date.now();
     seen.forEach((at, id) => { if (now - at > 12000) { const l = room.peers.get(id); if (l) drop(l); else seen.delete(id); } });
+    // Friends away too long lose the seat: a bot plays on (auction) or the team is free again (lobby).
+    let changed = false;
+    for (const [t, st] of Object.entries(room.lobby.seats) as [TeamId, Seat][]) {
+      if (!st.away || now - st.away < AWAY_KEEP_MS) continue;
+      delete room.lobby.seats[t];
+      if (room.lobby.started) room.onLeave?.(t);
+      changed = true;
+    }
+    if (changed) room.sendLobby();
   }, 3000);
 
   const drop = (link: Link) => {
@@ -170,11 +189,8 @@ export async function createRoom(name: string, team: TeamId, settings: Lobby['se
     room.peers.delete(link.peer);
     seen.delete(link.peer);
     link.close();
-    for (const [t, s] of Object.entries(room.lobby.seats) as [TeamId, Seat][]) {
-      if (s.peer !== link.peer) continue;
-      delete room.lobby.seats[t];
-      if (room.lobby.started) room.onLeave?.(t);
-    }
+    // Keep their seat for now, marked away: phones drop out whenever the screen locks.
+    for (const st of Object.values(room.lobby.seats) as Seat[]) if (st.peer === link.peer) st.away = Date.now();
     room.sendLobby();
   };
 
@@ -192,6 +208,16 @@ export async function createRoom(name: string, team: TeamId, settings: Lobby['se
     if (msg.t === 'hello') {
       link.label = String(msg.name ?? '').slice(0, 20);
       if (typeof msg.cid === 'string' && msg.cid) link.cid = msg.cid.slice(0, 24);
+      // Back on this device: give the seat straight back (no need to tap anything).
+      const back = link.cid ? (Object.entries(room.lobby.seats) as [TeamId, Seat][]).find(([, st]) => st.peer !== 'host' && st.cid === link.cid && st.peer !== link.peer) : undefined;
+      if (back && !(Object.values(room.lobby.seats) as Seat[]).some(st => st.peer === link.peer)) {
+        const [t, st] = back;
+        const old = room.peers.get(st.peer);
+        if (old) { room.peers.delete(st.peer); seen.delete(st.peer); old.close(); }
+        room.lobby.seats[t] = { name: link.label || st.name, peer: link.peer, cid: link.cid };
+        room.sendLobby();
+        return;
+      }
       link.send({ t: 'lobby', lobby: room.lobby });
       return;
     }
@@ -201,11 +227,10 @@ export async function createRoom(name: string, team: TeamId, settings: Lobby['se
       const who = link.label || 'Friend';
       const holder = room.lobby.seats[msg.team];
       if (holder) {
-        // The same person coming back on a new connection (their old one went quiet): hand the seat over.
-        // Same device (or, without one, same name and the old link has gone quiet).
-        const quiet = Date.now() - (seen.get(holder.peer) ?? 0) > 4000 || !room.peers.has(holder.peer);
+        // The same device coming back on a new connection: hand the seat over. (Matched by device only,
+        // so two friends with the same name can't take each other's seats.)
         const sameDevice = Boolean(link.cid && holder.cid === link.cid);
-        if (holder.peer !== 'host' && !seat && (sameDevice || (holder.name === who && quiet))) {
+        if (holder.peer !== 'host' && !seat && sameDevice) {
           const old = room.peers.get(holder.peer);
           if (old) { room.peers.delete(holder.peer); seen.delete(holder.peer); old.close(); }
           room.lobby.seats[msg.team] = { name: who, peer: link.peer, cid: link.cid };
@@ -450,4 +475,10 @@ export function personName(state: GameState, team: TeamId): string | null {
   const seats = host?.lobby.seats ?? guest?.lobby?.seats;
   const seat = seats?.[team];
   return seat?.name ?? 'Friend';
+}
+
+/** True while the friend playing this team is unreachable (their seat is being kept for them). */
+export function isAway(team: TeamId): boolean {
+  const seats = host?.lobby.seats ?? guest?.lobby?.seats;
+  return Boolean(seats?.[team]?.away);
 }

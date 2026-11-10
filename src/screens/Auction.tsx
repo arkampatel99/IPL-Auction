@@ -19,7 +19,7 @@ import AuctioneerStage, { type Call } from './AuctioneerStage';
 import { isAdmin } from '../ui/admin';
 import { getColorPref, setColorPref } from '../ui/theme';
 import type { Act } from './Game';
-import { guestRoom, hostRoom, inviteLink, personName } from '../net/room';
+import { guestRoom, hostRoom, inviteLink, isAway, personName } from '../net/room';
 
 /** `guest`: a friend following the host's auction (no pause, actions go to the host). */
 export default function Auction({ state, act, guest }: { state: GameState; act: Act; guest?: boolean }) {
@@ -719,7 +719,7 @@ function BidPanel({ state, act, outbidBy, call, rating, multi }: {
 function chipLabel(state: GameState, id: TeamId) {
   if (id === state.settings.team) return `${id} · You`;
   const t = state.teams[id];
-  if (t.human) return `${id} · ${personName(state, id)}`;
+  if (t.human) return `${id} · ${personName(state, id)}${isAway(id) ? ' (away)' : ''}`;
   return state.settings.names || (state.settings.humans?.length ?? 0) > 1 ? `${id} · Bot` : id;
 }
 

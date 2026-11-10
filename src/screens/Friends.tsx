@@ -43,7 +43,7 @@ export default function Friends() {
     if (!name.trim()) { setError('Enter your name first.'); return; }
     if (!/^[A-Z0-9]{6}$/.test(c)) { setError('Room codes have 6 letters or numbers.'); return; }
     keepName(name.trim());
-    nav(`/r/${c}`);
+    nav(`/r/${c}`, { state: { join: name.trim() } });
   };
 
   return (
@@ -179,14 +179,15 @@ export function SeatGrid({ seats, onPick, mine, late, myName, myCid }: {
       {TEAMS.map(t => {
         const s = seats[t.id];
         const free = !s;
-        const mineBefore = Boolean(s && s.peer !== 'host' && !mine && ((myCid && s.cid === myCid) || (myName && s.name === myName)));
+        const mineBefore = Boolean(s && s.peer !== 'host' && !mine && myCid && s.cid === myCid);
+        void myName;
         return (
           <button key={t.id} type="button" className={`seat${free ? ' free' : ''}${mine === t.id ? ' mine' : ''}`} disabled={!onPick || (!free && mine !== t.id && !mineBefore)}
             onClick={() => onPick?.(t.id)} style={{ ['--team' as string]: t.color }}>
             <TeamLogo id={t.id} size={32} />
             <span className="seat-text">
               <b>{t.id}</b>
-              <span className="small muted">{s ? (s.peer === 'host' ? `${s.name} (host)` : mineBefore && onPick ? `${s.name} · tap to rejoin` : s.name) : onPick ? (late ? 'Bot · tap to play' : 'Tap to pick') : 'Bot'}</span>
+              <span className="small muted">{s ? (s.peer === 'host' ? `${s.name} (host)` : mineBefore && onPick ? `${s.name} · tap to rejoin` : s.away ? `${s.name} · away` : s.name) : onPick ? (late ? 'Bot · tap to play' : 'Tap to pick') : 'Bot'}</span>
             </span>
           </button>
         );
